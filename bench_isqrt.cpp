@@ -8,7 +8,7 @@
 #include <iostream>
 #include "cigint.h"
 
-using uint = uint32_t;
+using u32 = uint32_t;
 static inline uint64_t now_ns() {
 	using namespace std::chrono;
 	return std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -47,8 +47,8 @@ Cigint cigint_isqrt(Cigint a) {
 	if (cigint_is0(a)) return a;
 
 	Cigint res = (Cigint){0};            // “trial root × 2”
-	uint bits = cigint_highest_order(a);
-	uint k = bits ? (bits - 1u) : 0u;    // top bit index
+	u32 bits = cigint_highest_order(a);
+	u32 k = bits ? (bits - 1u) : 0u;    // top bit index
 	if (k & 1u) k--;                     // make even → largest power of 4 ≤ a
 	Cigint bit = cigint_pow2(k);         // starts at 4^⌊(bits-1)/2⌋
 
@@ -71,8 +71,8 @@ Cigint cigint_isqrt3(Cigint a) {
 	Cigint rem = a;                      // running remainder
 	Cigint res = (Cigint){0};            // “trial root × 2”
 
-	uint bits = cigint_highest_order(a);
-	uint k = bits ? (bits - 1u) : 0u;    // top bit index
+	u32 bits = cigint_highest_order(a);
+	u32 k = bits ? (bits - 1u) : 0u;    // top bit index
 	if (k & 1u) k--;                     // make even → largest power of 4 ≤ a
 	Cigint bit = cigint_pow2(k);         // starts at 4^⌊(bits-1)/2⌋
 
@@ -97,7 +97,7 @@ Cigint cigint_isqrt2(Cigint a) {
 	if (cigint_is0(a)) return a;
 
 	// Initial rough guess: 2^(highest_order/2)
-	uint bits = cigint_highest_order(a);
+	u32 bits = cigint_highest_order(a);
 	Cigint x = cigint_pow2(bits / 2);
 
 	// Refine with Newton–Raphson iteration:
@@ -122,7 +122,7 @@ int main() {
 	std::mt19937_64 rng(12345);
 	auto rand_cig = [&]{
 		Cigint x = {0};
-		for (size_t i=0;i<CIGINT_N;++i) x.data[i] = (uint)rng();
+		for (size_t i=0;i<CIGINT_N;++i) x.data[i] = (u32)rng();
 		x.data[CIGINT_N-1] |= 1u;  // ensure non-zero LSW
 		return x;
 	};

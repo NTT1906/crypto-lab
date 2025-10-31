@@ -11,7 +11,7 @@
 #include <iostream>
 #include "cigint.h"
 
-using uint = uint32_t;
+using u32 = uint32_t;
 static inline uint64_t now_ns() {
   using namespace std::chrono;
   return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
@@ -19,10 +19,10 @@ static inline uint64_t now_ns() {
 
 // -------- Two-phase versions (shl2/shr2) --------
 
-Cigint shl2(Cigint lhs, uint amnt) {
+Cigint shl2(Cigint lhs, u32 amnt) {
   Cigint res = (Cigint){0};
-  size_t limb_off = amnt / SIZEOF_UINT;
-  size_t bits = amnt % SIZEOF_UINT;
+  size_t limb_off = amnt / SIZEOF_U32;
+  size_t bits = amnt % SIZEOF_U32;
   if (limb_off >= CIGINT_N) return res;
 
   if (bits == 0) {
@@ -30,7 +30,7 @@ Cigint shl2(Cigint lhs, uint amnt) {
       res.data[i] = lhs.data[i + limb_off];
     return res;
   }
-  size_t rbits = SIZEOF_UINT - bits;
+  size_t rbits = SIZEOF_U32 - bits;
   size_t i = 0;
   for (; i + limb_off + 1 < CIGINT_N; ++i)
     res.data[i] = (lhs.data[i + limb_off] << bits) |
@@ -40,10 +40,10 @@ Cigint shl2(Cigint lhs, uint amnt) {
   return res;
 }
 
-Cigint shr2(Cigint lhs, uint amnt) {
+Cigint shr2(Cigint lhs, u32 amnt) {
   Cigint res = (Cigint){0};
-  size_t limb_off = amnt / SIZEOF_UINT;
-  size_t bits = amnt % SIZEOF_UINT;
+  size_t limb_off = amnt / SIZEOF_U32;
+  size_t bits = amnt % SIZEOF_U32;
   if (limb_off >= CIGINT_N) return res;
 
   if (bits == 0) {
@@ -51,15 +51,15 @@ Cigint shr2(Cigint lhs, uint amnt) {
       res.data[CIGINT_N - 1 - i] = lhs.data[CIGINT_N - 1 - (i + limb_off)];
     return res;
   }
-  size_t lbits = SIZEOF_UINT - bits;
+  size_t lbits = SIZEOF_U32 - bits;
   size_t i = 0;
   for (; i + limb_off + 1 < CIGINT_N; ++i) {
-    uint hi = lhs.data[CIGINT_N - 1 - (i + limb_off)];
-    uint lo = lhs.data[CIGINT_N - 1 - (i + limb_off + 1)];
+    u32 hi = lhs.data[CIGINT_N - 1 - (i + limb_off)];
+    u32 lo = lhs.data[CIGINT_N - 1 - (i + limb_off + 1)];
     res.data[CIGINT_N - 1 - i] = (hi >> bits) | (lo << lbits);
   }
   if (i + limb_off < CIGINT_N) {
-    uint hi = lhs.data[CIGINT_N - 1 - (i + limb_off)];
+    u32 hi = lhs.data[CIGINT_N - 1 - (i + limb_off)];
     res.data[CIGINT_N - 1 - i] = (hi >> bits);
   }
   return res;
@@ -114,7 +114,7 @@ int main(){
   std::mt19937_64 rng(12345);
   auto rand_cig = [&]{
     Cigint x = {0};
-    for (size_t i=0;i<CIGINT_N;++i) x.data[i] = (uint)rng();
+    for (size_t i=0;i<CIGINT_N;++i) x.data[i] = (u32)rng();
     // ensure non-zero LSW sometimes
     x.data[CIGINT_N-1] |= 1u;
     return x;
@@ -127,7 +127,7 @@ int main(){
   // correctness + warmup
   for (int i=0;i<2000;++i){
     auto x = rand_cig();
-    uint sh = (uint)(rng() % (CIGINT_N * SIZEOF_UINT));
+    u32 sh = (u32)(rng() % (CIGINT_N * SIZEOF_U32));
     auto a = shl2(x,sh);
     // assert(eq(a,b)); // must match
   }
@@ -135,7 +135,7 @@ int main(){
   // measure
   for (int i=0;i<ITERS;++i){
     auto x = rand_cig();
-    uint sh = (uint)(rng() % (CIGINT_N * SIZEOF_UINT));
+    u32 sh = (u32)(rng() % (CIGINT_N * SIZEOF_U32));
 
     auto t0=now_ns(); sink=shl2(x,sh); auto t1=now_ns(); t_shl2 += (t1-t0);
     t0=now_ns(); sink=shr2(x,sh); t1=now_ns(); t_shr2 += (t1-t0);
