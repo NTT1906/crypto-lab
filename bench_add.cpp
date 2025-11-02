@@ -296,6 +296,35 @@ Cigint cigint_add_old(Cigint lhs, Cigint rhs) {
 	return lhs;
 }
 
+void cigint_mul_ref_4(Cigint *lhs, const Cigint *rhs) {
+	u32 carry = 0;
+
+	for (size_t k = 0; k < CIGINT_N; ++k) {
+		u64 acc_lo = carry;  /* low 32 of current column */
+		u32 acc_hi = 0;      /* high 32 of current column */
+
+		for (size_t i = 0; i <= k; ++i) {
+			u32 a = lhs->data[CIGINT_N - 1 - i];
+			u32 b = rhs->data[CIGINT_N - 1 - (k - i)];
+			u64 p = (u64)a * (u64)b;
+			u32 p_lo = (u32)p;
+			u32 p_hi = (u32)(p >> 32);
+
+			/* add low */
+			u32 old = acc_lo;
+			acc_lo = old + p_lo;
+			u32 c1 = (acc_lo < old);
+
+			/* add high + carry from low */
+			acc_hi = acc_hi + p_hi + c1;
+		}
+
+		lhs->data[CIGINT_N - 1 - k] = acc_lo;
+		carry = acc_hi;
+	}
+}
+
+
 void benchmark() {
 	Cigint a, b;
 	cigint_fill_random(&a);
@@ -324,14 +353,14 @@ void benchmark() {
 	std::cout << "a = " << a << "\n";
 	std::cout << "b = " << b << "\n";
 	bench_func_ref("add_ref", cigint_add_ref, a, b);
-	bench_func_ref("add_ref", cigint_add_ref, a, b);
-	bench_func_ref("add_ref_old", cigint_add_ref_old, a, b);
-	bench_func("add_old", cigint_add_old, a, b);
 	bench_func("add", cigint_add, a, b);
 	bench_func_ref("mul_ref", cigint_mul_ref, a, b);
 	bench_func_refex("mul_refex", cigint_mul_refex, a, b, r);
 	bench_func_ref("mul_ref2", cigint_mul_ref2, a, b);
+	bench_func_ref("mul_2_ref2_b", cigint_mul_ref2_b, a, b);
 	bench_func_ref("mul_ref3", cigint_mul_ref3, a, b);
+	bench_func_ref("mul_ref3_b", cigint_mul_ref3_b, a, b);
+	bench_func_ref("mul_ref4", cigint_mul_ref_4, a, b);
 	bench_func_ref("mul_ref_old", cigint_mul_ref_old, a, b);
 	bench_func("mul_old", cigint_mul_old, a, b);
 	std::cout << "a = " << a << "\n";
@@ -344,16 +373,18 @@ int main() {
 	return 0;
 }
 
-// a = 759480307011953463468328532656259629625734757261525159780721102534358014148939345155444885268762564303576054958843407900809783642799109643494134892615670
-// b = 1851399520923607203120963818347025007257247084972234839639630771977617926347525576181116318869116385755354715237252143688539590208070507383212645245605940
-// add_ref                   | first:        300 ns | total_loop:      1166800 ns | mean_loop:      11.67 ns | total_body:      3062500 ns | mean_body:      30.62 ns
-// add_ref                   | first:        200 ns | total_loop:      1200800 ns | mean_loop:      12.01 ns | total_body:      4206500 ns | mean_body:      42.06 ns
-// add_ref_old               | first:      16600 ns | total_loop:     15198000 ns | mean_loop:     151.98 ns | total_body:     18317500 ns | mean_body:     183.18 ns
-// add_old                   | first:        400 ns | total_loop:     15977800 ns | mean_loop:     159.78 ns | total_body:     17229700 ns | mean_body:     172.30 ns
-// add                       | first:        200 ns | total_loop:      1117700 ns | mean_loop:      11.18 ns | total_body:      3691300 ns | mean_body:      36.91 ns
-// mul_ref                   | first:        600 ns | total_loop:      5419900 ns | mean_loop:      54.20 ns | total_body:      8105700 ns | mean_body:      81.06 ns
-// mul_refex                 | first:        300 ns | total_loop:      5233700 ns | mean_loop:      52.34 ns | total_body:     10210500 ns | mean_body:     102.11 ns
-// mul_ref2                  | first:        600 ns | total_loop:     18298400 ns | mean_loop:     182.98 ns | total_body:     19707300 ns | mean_body:     197.07 ns
-// mul_ref3                  | first:        500 ns | total_loop:      5980800 ns | mean_loop:      59.81 ns | total_body:      8533400 ns | mean_body:      85.33 ns
-// mul_ref_old               | first:      14900 ns | total_loop:   1128302400 ns | mean_loop:   11283.02 ns | total_body:   1105397200 ns | mean_body:   11053.97 ns
-// mul_old                   | first:       9800 ns | total_loop:    919708900 ns | mean_loop:    9197.09 ns | total_body:    932545400 ns | mean_body:    9325.45 ns
+// a = 6285088557015142153805641923869937749706537137630097017862647915330197022639331637859852227293232937634720834295549987992776817383678384221041455562941383
+// b = 3917538045356230381857991288974190634479233992622172085610044456706146309726126356257005088871671263022323328662412525459899758020885878247371443781912954
+// add_ref                   | first:        140 ns | total_loop:       939610 ns | mean_loop:       9.40 ns | total_body:      2714170 ns | mean_body:      27.14 ns
+// add_ref                   | first:         54 ns | total_loop:      1010836 ns | mean_loop:      10.11 ns | total_body:      2878229 ns | mean_body:      28.78 ns
+// add_ref_old               | first:        287 ns | total_loop:      6693175 ns | mean_loop:      66.93 ns | total_body:      7280860 ns | mean_body:      72.81 ns
+// add_old                   | first:        102 ns | total_loop:      4053913 ns | mean_loop:      40.54 ns | total_body:      6301981 ns | mean_body:      63.02 ns
+// add                       | first:        807 ns | total_loop:      1257885 ns | mean_loop:      12.58 ns | total_body:      3485199 ns | mean_body:      34.85 ns
+// mul_ref                   | first:        783 ns | total_loop:      4550324 ns | mean_loop:      45.50 ns | total_body:      6882402 ns | mean_body:      68.82 ns
+// mul_refex                 | first:        579 ns | total_loop:      4226172 ns | mean_loop:      42.26 ns | total_body:      5553441 ns | mean_body:      55.53 ns
+// mul_ref2                  | first:        896 ns | total_loop:      8820169 ns | mean_loop:      88.20 ns | total_body:      9800960 ns | mean_body:      98.01 ns
+// mul_2_ref2_b              | first:        505 ns | total_loop:      6378370 ns | mean_loop:      63.78 ns | total_body:      9341184 ns | mean_body:      93.41 ns
+// mul_ref3                  | first:        337 ns | total_loop:      7810444 ns | mean_loop:      78.10 ns | total_body:     12243382 ns | mean_body:     122.43 ns
+// mul_ref_old               | first:       7485 ns | total_loop:    485269560 ns | mean_loop:    4852.70 ns | total_body:    446230310 ns | mean_body:    4462.30 ns
+// mul_old                   | first:       3345 ns | total_loop:    353873425 ns | mean_loop:    3538.73 ns | total_body:    362419415 ns | mean_body:    3624.19 ns
+

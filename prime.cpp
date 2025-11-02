@@ -18,15 +18,15 @@ struct Poly {
 static inline Cigint z0() { return CIGINT_ZERO(); }
 static inline Cigint z1() { return cigint_from_u32(1u); }
 
-// res = (a + b) mod m   (all fixed width)
-static inline void add_mod(Cigint &res, const Cigint &b, const Cigint &m) {
+// res = (a + b) mod m (all fixed width)
+static inline void add_mod(Cigint& res, const Cigint& b, const Cigint &m) {
     cigint_add_ref(&res, &b);
     if (cigint_cmp(res, m) >= 0) {
         cigint_sub_ref(&res, &m);
     }
 }
 
-// safe modular multiply: (a * b) mod m
+// safely modularly multiply: (a * b) mod m
 // does NOT rely on a 2N-limb product; stays in N limbs the whole time
 static Cigint mul_mod_safe(Cigint a, Cigint b, const Cigint &m) {
     // reduce inputs first
