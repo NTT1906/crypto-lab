@@ -7,6 +7,7 @@
 #include <cstdarg>
 #include <cstring>
 #include <cstdint>
+#include <string>
 #else
 #include <assert.h>
 #include <stdio.h>
@@ -35,9 +36,7 @@ typedef struct Cigint {
 	u32 data[CIGINT_N];
 
 #ifdef __cplusplus
-	Cigint() : data{} {
-		memset(this->data, 0, sizeof(this->data));
-	}
+	Cigint() : data{} {}
 	Cigint(const Cigint &rhs) : data{} {
 		memcpy(this->data, rhs.data, sizeof(rhs.data));
 	}
@@ -48,9 +47,11 @@ typedef struct Cigint {
 		return *this;
 	}
 	Cigint(u32 rhs) : data{} {
-		memset(this->data, 0, sizeof(this->data));
 		this->data[CIGINT_N - 1] = rhs;
 	}
+	[[nodiscard]] std::string toDecStr() const;
+	[[nodiscard]] std::string toHexStr(bool uppercase = false) const;
+	[[nodiscard]] std::string toBinStr() const;
 #endif
 } Cigint;
 
@@ -109,7 +110,14 @@ void cigint_divmod(CFREF(Cigint) lhs, CFREF(Cigint) rhs, Cigint *q, Cigint *r);
 Cigint cigint_div(CFREF(Cigint) lhs, CFREF(Cigint) rhs);
 Cigint cigint_mod(CFREF(Cigint) lhs, CFREF(Cigint) rhs);
 Cigint cigint_sqr(Cigint base);
-u32 cigint_printf(const char *fmt, ...);
+// u32 cigint_printf(const char *fmt, ...);
+
+Cigint cigint_from_dec(const char *s);
+Cigint cigint_from_hex(const char *s);
+Cigint cigint_from_bin(const char *s);
+size_t cigint_to_dec(const Cigint *x, char *buf, size_t buf_size);
+size_t cigint_to_hex(const Cigint *x, char *buf, size_t buf_size, int uppercase);
+size_t cigint_to_bin(const Cigint *x, char *buf, size_t buf_size);
 
 #ifdef CIGINT_STRIP_PREFIX
 	#define from_u32 cigint_from_u32
@@ -585,9 +593,9 @@ Cigint cigint_pow_v3(Cigint base, u32 exp) {
 	if (exp == 0) return cigint_from_u32(1);
 	Cigint res = cigint_pow_v3(base, exp / 2);
 	Cigint tmp = cigint_mul(res, res);
-	cigint_printf("exp :%d\n", exp);
-	cigint_printf("res :%Cd\n", res);
-	cigint_printf("tmp :%Cd\n", tmp);
+	// cigint_printf("exp :%d\n", exp);
+	// cigint_printf("res :%Cd\n", res);
+	// cigint_printf("tmp :%Cd\n", tmp);
 	if (exp % 2 == 0) {
 		return tmp;
 	}
@@ -761,6 +769,71 @@ u32 cigint_print16_impl(CFREF(Cigint) a, int upper) {
 u32 cigint_print16(CFREF(Cigint) a)       { return cigint_print16_impl(a, 0); }
 u32 cigint_print16_upper(CFREF(Cigint) a) { return cigint_print16_impl(a, 1); }
 
+#ifdef __cplusplus
+inline u32 cigint_print_spec(char spec, const Cigint &x) {
+    switch (spec) {
+        case 'b': return cigint_print2(x);
+        case 'd': return cigint_print10(x);
+        case 'x': return cigint_print16(x);
+        case 'X': return cigint_print16_upper(x);
+        default:  return 0;
+    }
+}
+
+inline u32 cigint_printf(const char *fmt) {
+    u32 counter = 0;
+    while (*fmt) {
+        if (*fmt == '%' && *(fmt + 1) == '%') {
+            putchar('%');
+            ++counter; fmt += 2;
+        } else {
+            putchar(*fmt++);
+            ++counter;
+        }
+    }
+    return counter;
+}
+
+template <typename... Rest>
+inline typename std::enable_if<(sizeof...(Rest) >= 0), u32>::type
+cigint_printf(const char *fmt, const Cigint &arg, Rest&&... rest) {
+    u32 counter = 0;
+
+    while (*fmt) {
+        if (*fmt == '%') {
+            ++fmt;
+            // "%%"
+            if (*fmt == '%') {
+                putchar('%');
+                ++counter;
+                ++fmt;
+                continue;
+            }
+            // "%C?"
+            if (*fmt == 'C') {
+				if (char spec = *(fmt + 1); spec == 'b' || spec == 'd' || spec == 'x' || spec == 'X') {
+                    fmt += 2;
+                    counter += cigint_print_spec(spec, arg);
+                    return counter + cigint_printf(fmt, std::forward<Rest>(rest)...);
+                }
+				putchar('%'); ++counter;
+				putchar('C'); ++counter;
+				continue;
+			}
+            putchar('%'); ++counter;
+            if (*fmt) {
+                putchar(*fmt); ++counter;
+                ++fmt;
+            }
+        } else {
+            putchar(*fmt++);
+            ++counter;
+        }
+    }
+    // we reached the end of fmt but still had an arg — just ignore the arg
+    return counter;
+}
+#else
 u32 cigint_printf(const char *fmt, ...) {
 	u32 counter = 0;
 	va_list lst;
@@ -804,6 +877,7 @@ u32 cigint_printf(const char *fmt, ...) {
 	va_end(lst);
 	return counter;
 }
+#endif
 
 int is_space_c(unsigned char c) {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c=='\v';
@@ -920,79 +994,230 @@ Cigint cigint_from_str(const char *s) {
 	return cigint_from_dec(p);
 }
 
+/* --------------------------------------------------------------------- */ /* HEX → string */
+/* returns the number of chars written (not counting '\0') */
+/* --------------------------------------------------------------------- */
+size_t cigint_to_hex(const Cigint *x, char *buf, size_t buf_size, int uppercase) {
+	if (buf_size == 0) return 0;
+	size_t pos = 0; /* skip leading zero limbs (MSW first) */
+	size_t i = 0;
+	while (i < CIGINT_N && x->data[i] == 0u) ++i;
+	if (i == CIGINT_N) { /* x == 0 */
+		if (buf_size > 1) {
+			buf[0] = '0';
+			buf[1] = '\0';
+			return 1;
+		}
+		buf[0] = '\0';
+		return 0;
+	} /* first limb: no zero-padding */
+	{
+		int written = snprintf(buf + pos, buf_size - pos, uppercase ? "%X" : "%x", x->data[i]);
+		if (written <= 0 || (size_t)written >= buf_size - pos) { /* truncated */
+			buf[buf_size - 1] = '\0';
+			return buf_size - 1;
+		}
+		pos += (size_t)written;
+	} /* remaining limbs: always 8 hex digits */
+	for (size_t j = i + 1; j < CIGINT_N; ++j) {
+		int written = snprintf(buf + pos, buf_size - pos, uppercase ? "%08X" : "%08x", x->data[j]);
+		if (written <= 0 || (size_t)written >= buf_size - pos) {
+			buf[buf_size - 1] = '\0';
+			return buf_size - 1;
+		}
+		pos += (size_t)written;
+	}
+	buf[pos] = '\0';
+	return pos;
+}
+
+/* ---------------------------------------------------------------------
+ * BINARY → string
+ * returns the number of chars written (not counting '\0')
+ * --------------------------------------------------------------------- */
+size_t cigint_to_bin(const Cigint *x, char *buf, size_t buf_size) {
+	if (buf_size == 0) return 0;
+	u32 ho = cigint_highest_order_ref(x); /* number of bits, 0.. */
+	if (ho == 0) { /* x == 0 */
+		if (buf_size > 1) {
+			buf[0] = '0';
+			buf[1] = '\0';
+			return 1;
+		}
+		buf[0] = '\0';
+		return 0;
+	}
+	size_t pos = 0;
+	for (u32 bit = ho; bit-- > 0;) {
+		if (pos + 1 >= buf_size) {
+			buf[buf_size - 1] = '\0';
+			return buf_size - 1;
+		}
+		buf[pos++] = (char)('0' + cigint_get_bit_ref(x, bit));
+	}
+	buf[pos] = '\0';
+	return pos;
+}
+
+/* --------------------------------------------------------------------- */ /* DECIMAL → string */
+/* uses the same 1e8-chunk trick as your cigint_print10() */ /* returns the number of chars written (not counting '\0') */
+/* --------------------------------------------------------------------- */
+size_t cigint_to_dec(const Cigint *x, char *buf, size_t buf_size) {
+	if (buf_size == 0) return 0;
+	if (cigint_is0_ref(x)) {
+		if (buf_size > 1) {
+			buf[0] = '0';
+			buf[1] = '\0';
+			return 1;
+		}
+		buf[0] = '\0';
+		return 0;
+	} /* max chunks like in header */
+	enum { BASE = 100000000U }; /* 1e8 */ /* enough for any CIGINT_N; same formula as in cigint.h */
+	u32 rems[(CIGINT_N * 32 + 26) / 27];
+	size_t count = 0;
+	Cigint n = *x;
+	Cigint q;
+	while (!cigint_is0_ref(&n)) {
+		u32 r;
+		cigint_sdivmod_ref(&n, BASE, &q, &r);
+		rems[count++] = r;
+		n = q;
+	}
+	size_t pos = 0; /* print most significant chunk without leading zeros */
+	{
+		char tmp[16];
+		int written = snprintf(tmp, sizeof(tmp), "%u", rems[count - 1]);
+		if (written <= 0) {
+			buf[0] = '\0';
+			return 0;
+		}
+		if ((size_t)written >= buf_size) { /* truncated */
+			memcpy(buf, tmp, buf_size - 1);
+			buf[buf_size - 1] = '\0';
+			return buf_size - 1;
+		}
+		memcpy(buf, tmp, (size_t)written);
+		pos += (size_t)written;
+	} /* remaining chunks with leading zeros (always 8 digits) */
+	for (size_t i = count - 1; i-- > 0;) {
+		if (pos + 8 >= buf_size) { /* we would overflow, truncate */
+			size_t remain = buf_size - 1 - pos; /* write as much as we can from 8-digit block */
+			char tmp[9];
+			snprintf(tmp, sizeof(tmp), "%08u", rems[i]);
+			memcpy(buf + pos, tmp, remain);
+			pos += remain;
+			buf[pos] = '\0';
+			return pos;
+		} /* safe to write 8 digits */
+		snprintf(buf + pos, buf_size - pos, "%08u", rems[i]);
+		pos += 8;
+	}
+	buf[pos] = '\0';
+	return pos;
+}
 #endif
 
 #ifdef __cplusplus
-Cigint operator+(const Cigint &lhs, const Cigint &rhs) {
+inline Cigint operator+(const Cigint &lhs, const Cigint &rhs) {
 	return cigint_add(lhs, rhs);
 }
 
-const Cigint &operator+=(Cigint &lhs, const Cigint &rhs) {
+inline const Cigint& operator+=(Cigint &lhs, const Cigint &rhs) {
 	cigint_add_ref(&lhs, &rhs);
 	return lhs;
 }
 
 /* TODO: find an ideal way when calculate with u32 */
-Cigint operator+(const Cigint &lhs, u32 rhs) {
+inline Cigint operator+(const Cigint &lhs, u32 rhs) {
 	Cigint tmp = cigint_from_u32(rhs);
 	return cigint_add(lhs, tmp);
 }
 
-const Cigint &operator+=(Cigint &lhs, u32 rhs) {
+inline const Cigint& operator+=(Cigint &lhs, u32 rhs) {
 	Cigint tmp = cigint_from_u32(rhs);
 	cigint_add_ref(&lhs, &tmp);
 	return lhs;
 }
 
-Cigint operator-(const Cigint &lhs, const Cigint &rhs) {
+inline Cigint operator-(const Cigint &lhs, const Cigint &rhs) {
 	return cigint_sub(lhs, rhs);
 }
 
-const Cigint &operator-=(Cigint &lhs, const Cigint &rhs) {
+inline const Cigint &operator-=(Cigint &lhs, const Cigint &rhs) {
 	cigint_sub_ref(&lhs, &rhs);
 	return lhs;
 }
 
-Cigint operator*(const Cigint &lhs, const Cigint &rhs) {
+inline Cigint operator*(const Cigint &lhs, const Cigint &rhs) {
 	return cigint_mul(lhs, rhs);
 }
 
-const Cigint &operator*=(Cigint &lhs, const Cigint &rhs) {
+inline const Cigint &operator*=(Cigint &lhs, const Cigint &rhs) {
 	cigint_mul_ref(&lhs, &rhs);
 	return lhs;
 }
 
-Cigint operator/(const Cigint &lhs, const Cigint &rhs) {
+inline Cigint operator/(const Cigint &lhs, const Cigint &rhs) {
 	return cigint_div(lhs, rhs);
 }
 
-const Cigint &operator/=(Cigint &lhs, const Cigint &rhs) {
+inline const Cigint& operator/=(Cigint &lhs, const Cigint &rhs) {
 	lhs = cigint_div(lhs, rhs);
 	return lhs;
 }
 
-bool operator==(const Cigint &lhs, const Cigint &rhs) {
+inline bool operator==(const Cigint &lhs, const Cigint &rhs) {
 	return cigint_cmp_ref(&lhs, &rhs) == 0;
 }
 
-bool operator!=(const Cigint &lhs, const Cigint &rhs) {
+inline bool operator!=(const Cigint &lhs, const Cigint &rhs) {
 	return cigint_cmp_ref(&lhs, &rhs) != 0;
 }
 
-bool operator>(const Cigint &lhs, const Cigint &rhs) {
+inline bool operator>(const Cigint &lhs, const Cigint &rhs) {
 	return cigint_cmp_ref(&lhs, &rhs) > 0;
 }
 
-bool operator<(const Cigint &lhs, const Cigint &rhs) {
+inline bool operator<(const Cigint &lhs, const Cigint &rhs) {
 	return cigint_cmp_ref(&lhs, &rhs) < 0;
 }
 
-bool operator>=(const Cigint &lhs, const Cigint &rhs) {
+inline bool operator>=(const Cigint &lhs, const Cigint &rhs) {
 	return cigint_cmp_ref(&lhs, &rhs) >= 0;
 }
 
-bool operator<=(const Cigint &lhs, const Cigint &rhs) {
+inline bool operator<=(const Cigint &lhs, const Cigint &rhs) {
 	return cigint_cmp_ref(&lhs, &rhs) <= 0;
 }
+
+/* pick a safe buffer size for decimal:
+ * max decimal digits ≈ CIGINT_N * 32 * log10(2) ≈ CIGINT_N * 10
+ * so 16 * CIGINT_N is very safe for 512-bit; add a bit more.
+ */
+inline std::string Cigint::toDecStr() const {
+	char buf[16 * CIGINT_N + 64];
+	cigint_to_dec(this, buf, sizeof(buf));
+	return buf;
+}
+
+inline std::string Cigint::toHexStr(bool uppercase) const {
+	/* each limb → up to 8 hex chars; +1 for '\0' */
+	char buf[8 * CIGINT_N + 8];
+	cigint_to_hex(this, buf, sizeof(buf), uppercase ? 1 : 0);
+	return buf;
+}
+
+inline std::string Cigint::toBinStr() const {
+	/* worst case: CIGINT_N*32 bits + 1 */
+	char buf[CIGINT_N * 32 + 2];
+	cigint_to_bin(this, buf, sizeof(buf));
+	return buf;
+}
+
+inline std::ostream& operator<<(std::ostream& os, const Cigint& x) {
+	return os << x.toDecStr();
+}
+
 #endif
 #endif
