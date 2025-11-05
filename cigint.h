@@ -31,6 +31,7 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 #define SIZEOF_U32 (8 * sizeof(u32))
 #define SIZEOF_U64 (8 * sizeof(u64))
+#define SIZEOF_CIGINT (CIGINT_N * SIZEOF_U32)
 
 typedef struct Cigint {
 	u32 data[CIGINT_N];
@@ -145,14 +146,14 @@ size_t cigint_to_bin(const Cigint *x, char *buf, size_t buf_size);
 	#define mul cigint_mul
 	#define mulr cigint_mul_ref
 
-	#define divmod cigint_divmod
-	#define divmodr cigint_divmod_ref
-	#define div cigint_div
-	#define mod cigint_mod
+	#define cdivmod cigint_divmod
+	#define cdivmodr cigint_divmod_ref
+	#define cdiv cigint_div
+	#define cmod cigint_mod
 
-	#define pow cigint_pow
-	#define powr cigint_pow_ref
-	#define sqr cigint_sqr
+	#define cpow cigint_pow
+	#define c cigint_pow_ref
+	#define csqr cigint_sqr
 
 	#define print2 cigint_print2
 	#define print10 cigint_print10
@@ -441,29 +442,29 @@ Cigint cigint_sub(Cigint lhs, CFREF(Cigint) rhs) {
 	return lhs;
 }
 
-void cigint_mul_ref_old(Cigint *lhs, Cigint *rhs) {
-	Cigint res = CIGINT_ZERO();
-	while (!cigint_is0_ref(rhs)) {
-		if (u1_get_bit(rhs->data[CIGINT_N - 1], 0) == 1) {
-			cigint_add_ref(&res, lhs);
-		}
-		*lhs = cigint_shl(*lhs, 1);
-		*rhs = cigint_shr(*rhs, 1);
-	}
-	*lhs = res;
-}
+// void cigint_mul_ref_old(Cigint *lhs, Cigint *rhs) {
+// 	Cigint res = CIGINT_ZERO();
+// 	while (!cigint_is0_ref(rhs)) {
+// 		if (u1_get_bit(rhs->data[CIGINT_N - 1], 0) == 1) {
+// 			cigint_add_ref(&res, lhs);
+// 		}
+// 		*lhs = cigint_shl(*lhs, 1);
+// 		*rhs = cigint_shr(*rhs, 1);
+// 	}
+// 	*lhs = res;
+// }
 
-Cigint cigint_mul_old(Cigint lhs, Cigint rhs) {
-	Cigint res = CIGINT_ZERO();
-	while (!cigint_is0(rhs)) {
-		if (u1_get_bit(rhs.data[CIGINT_N - 1], 0) == 1) {
-			cigint_add(res, lhs);
-		}
-		lhs = cigint_shl(lhs, 1);
-		rhs = cigint_shr(rhs, 1);
-	}
-	return lhs;
-}
+// Cigint cigint_mul_old(Cigint lhs, Cigint rhs) {
+// 	Cigint res = CIGINT_ZERO();
+// 	while (!cigint_is0(rhs)) {
+// 		if (u1_get_bit(rhs.data[CIGINT_N - 1], 0) == 1) {
+// 			cigint_add(res, lhs);
+// 		}
+// 		lhs = cigint_shl(lhs, 1);
+// 		rhs = cigint_shr(rhs, 1);
+// 	}
+// 	return lhs;
+// }
 
 void cigint_mul_ref(Cigint *lhs, const Cigint *rhs) {
 	Cigint tmp = CIGINT_ZERO();
@@ -484,7 +485,7 @@ void cigint_mul_ref(Cigint *lhs, const Cigint *rhs) {
 	if (carry != 0) {
 		// printf("Carry: %llu\n", carry);
 		// fprintf(stderr, "Cigint overflow in multiplication: result truncated\n");
-		// assert(0 && "Cigint overflow – increase CIGINT_N or use dynamic bigint");
+		// assert(0 && "cigint_mul_ref Cigint overflow – increase CIGINT_N or use dynamic bigint");
 	}
 
 	*lhs = tmp;
@@ -540,8 +541,9 @@ void cigint_mul_ref3(Cigint *lhs, const Cigint *rhs) {
 	}
 
 	if (carry != 0) {
-		// fprintf(stderr, "Cigint overflow in multiplication: result truncated\n");
-		// assert(0 && "Cigint overflow – increase CIGINT_N or use dynamic bigint");
+		printf("Carry: %lu\n", carry);
+		fprintf(stderr, "Cigint overflow in multiplication: result truncated\n");
+		assert(0 && "cigint_mul_ref3: Cigint overflow – increase CIGINT_N or use dynamic bigint");
 	}
 
 	*lhs = tmp;
@@ -549,7 +551,7 @@ void cigint_mul_ref3(Cigint *lhs, const Cigint *rhs) {
 
 void cigint_mul_ref3_b(Cigint *lhs, const Cigint *rhs) {
 	u64 carry = 0;
-	// Loop from least significant position (rightmost index) to most (leftmost)
+	// Loop from the least significant position (rightmost index) to most (leftmost)
 	// But since data[0] is MSB, we reverse index order properly.
 	for (ssize_t k = CIGINT_N - 1; k >= 0; --k) {
 		u64 acc = carry;
@@ -637,7 +639,7 @@ Cigint cigint_pow_v3(Cigint base, u32 exp) {
 	return cigint_mul(base, tmp);
 }
 
-Cigint cigint_from_u32(u32 x) {
+inline Cigint cigint_from_u32(u32 x) {
 	Cigint tmp = CIGINT_ZERO();
 	tmp.data[CIGINT_N - 1] = x;
 	return tmp;
@@ -1230,20 +1232,23 @@ inline bool operator<=(const Cigint &lhs, const Cigint &rhs) {
  * max decimal digits ≈ CIGINT_N * 32 * log10(2) ≈ CIGINT_N * 10
  * so 16 * CIGINT_N is very safe for 512-bit; add a bit more.
  */
-inline std::string Cigint::toDecStr() const {
+// inline
+std::string Cigint::toDecStr() const {
 	char buf[16 * CIGINT_N + 64];
 	cigint_to_dec(this, buf, sizeof(buf));
 	return buf;
 }
 
-inline std::string Cigint::toHexStr(bool uppercase) const {
+// inline
+std::string Cigint::toHexStr(bool uppercase) const {
 	/* each limb → up to 8 hex chars; +1 for '\0' */
 	char buf[8 * CIGINT_N + 8];
 	cigint_to_hex(this, buf, sizeof(buf), uppercase ? 1 : 0);
 	return buf;
 }
 
-inline std::string Cigint::toBinStr() const {
+// inline
+std::string Cigint::toBinStr() const {
 	/* worst case: CIGINT_N*32 bits + 1 */
 	char buf[CIGINT_N * 32 + 2];
 	cigint_to_bin(this, buf, sizeof(buf));

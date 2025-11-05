@@ -10,12 +10,18 @@
 
 using namespace std::chrono;
 
-void cigint_fill_random(Cigint* cig) {
+void cigint_fill_random(Cigint *cig) {
 	for (size_t i = 0; i < CIGINT_N; i++) {
 		u32 r = (u32)rand();
 		r = (r << 16) ^ (u32)rand();
 		cig->data[i] = r;
 	}
+}
+
+void cigint_fill_more_random(Cigint *cig) {
+	size_t randomLimb = 1 + rand() % CIGINT_N;
+	for (unsigned int & i : cig->data) i = 0;
+	for (size_t i = 0; i < randomLimb; i++) cig->data[i] =  (u32)rand() << 16 ^ (u32)rand();
 }
 
 #include "benchmark.h"
@@ -324,47 +330,206 @@ void cigint_mul_ref_4(Cigint *lhs, const Cigint *rhs) {
 	}
 }
 
+void mul_mode_school(Cigint *lhs, const Cigint *rhs, const Cigint *m) {
+    Cigint x = cigint_mod(*lhs, *m);      // a mod m
+    Cigint p = CIGINT_ZERO();
+    u32 nbits = cigint_highest_order(*rhs);
+    for (u32 i = 0; i < nbits; ++i) {
+        if (cigint_get_bit_ref(rhs, i)) {
+            cigint_add_ref(&p, &x);
+            p = cigint_mod(p, *m);
+        }
+        x = cigint_shl(x, 1);
+        x = cigint_mod(x, *m);
+    }
+    *lhs = p;
+}
+
+void mul_mode_school_test(Cigint *lhs, const Cigint *rhs) {
+	const Cigint m = cigint_from_u32(23127);
+	mul_mode_school(lhs, rhs, &m);
+}
+
+u32 mul_mod_u32_school(const Cigint &a, const Cigint &b, u32 m32) {
+	// a_mod = a % m32; // rem only (no big-int needed afterward)
+	u32 a_mod;
+	cigint_sdivmod(a, m32, NULL, &a_mod);
+	u32 acc = 0;
+	u32 nbits = cigint_highest_order(b);
+	for (u32 i = 0; i < nbits; ++i) {
+		if (cigint_get_bit_ref(&b, i)) acc = (acc + a_mod) % m32;
+		a_mod = (2u * a_mod) % m32;
+	}
+	return acc;
+}
+
+void mul_mode_u32_school_test(Cigint *lhs, const Cigint *rhs) {
+	const u32 m32 = 23127;
+	u32 r = mul_mod_u32_school(*lhs, *rhs, m32);
+	*lhs = cigint_from_u32(r);
+}
+
+u32 mul_mod_u32_school_2(const Cigint &a, const Cigint &b, u32 m32) {
+	u32 a_mod;
+	u32 b_mod;
+	cigint_sdivmod(a, m32, NULL, &a_mod);
+	cigint_sdivmod(b, m32, NULL, &b_mod);
+	return ((u64)a_mod * (u64)b_mod) % m32;
+}
+
+void mul_mode_u32_school_2_test(Cigint *lhs, const Cigint *rhs) {
+	const u32 m32 = 23127;
+	u32 r = mul_mod_u32_school_2(*lhs, *rhs, m32);
+	*lhs = cigint_from_u32(r);
+}
+
+void cigint_mul_mod_wordwise(Cigint *lhs, const Cigint *rhs, const Cigint *m) {
+	Cigint res = CIGINT_ZERO();
+
+	for (size_t k = 0; k < CIGINT_N; ++k) {
+		u64 acc_lo = 0;
+		u32 acc_hi = 0;
+
+		for (size_t i = 0; i <= k; ++i) {
+			u32 a = lhs->data[CIGINT_N - 1 - i];
+			u32 b = rhs->data[CIGINT_N - 1 - (k - i)];
+			u64 p = (u64)a * (u64)b;
+
+			u32 p_lo = (u32)p;
+			u32 p_hi = (u32)(p >> 32);
+
+			u32 old_lo = acc_lo;
+			acc_lo += p_lo;
+			u32 c1 = (acc_lo < old_lo);
+
+			acc_hi += p_hi + c1;
+		}
+
+		res.data[CIGINT_N - 1 - k] = (u32)acc_lo;
+
+		if (k + 1 < CIGINT_N) {
+			res.data[CIGINT_N - 2 - k] += acc_hi;
+		}
+	}
+
+	res = cigint_mod(res, *m);
+	*lhs = res;
+}
+
+void cigint_mul_ref_2_mod(Cigint *lhs, Cigint *rhs, const Cigint *m) {
+	cigint_divmod_ref(lhs, m, NULL, lhs);
+	cigint_divmod_ref(rhs, m, NULL, rhs);
+	__uint128_t carry = 0;
+	for (size_t k = 0; k < CIGINT_N; ++k) {
+		__uint128_t acc = carry;
+		for (size_t i = 0; i <= k; ++i) {
+			acc += (__uint128_t)lhs->data[CIGINT_N - 1 - i]
+				 * (__uint128_t)rhs->data[CIGINT_N - 1 - (k - i)];
+		}
+		carry = acc >> 32;
+		lhs->data[CIGINT_N - 1 - k] = (u32)acc;
+	}
+	cigint_divmod_ref(lhs, m, NULL, lhs);
+}
+
+void mul_mode_wordwise_test(Cigint *lhs, Cigint *rhs) {
+	Cigint m = cigint_from_u32(23127);
+	cigint_mul_ref_2_mod(lhs, rhs, &m);
+}
+
+void divmod_ref_test(Cigint *lhs, Cigint *rhs) {
+	cigint_divmod_ref(lhs, rhs, rhs, lhs);
+}
+
+void pow_mod(Cigint *x, Cigint *e, Cigint *m) {
+	Cigint ans = 1;
+	while (!cigint_is0_ref(e)) {
+		if (cigint_get_bit_ref(e, 0)) {
+			cigint_mul_ref_2_mod(&ans, x, m);
+		}
+		cigint_mul_ref_2_mod(x, x, m);
+		*e = cigint_shr(*e, 1);
+	}
+	*x = ans;
+}
+
+void pow_mod_2(Cigint *x, Cigint *e, Cigint *m) {
+	Cigint ans = 1;
+	u32 hob = cigint_highest_order(*e);
+	for (size_t i = 0; i < hob; ++i) {
+		if (cigint_get_bit_ref(e, i)) {
+			cigint_mul_ref_2_mod(&ans, x, m);
+		}
+		cigint_mul_ref_2_mod(x, x, m);
+	}
+	*x = ans;
+}
+
+void pow_mod_test(Cigint *lhs, Cigint *rhs) {
+	Cigint m = 23127;
+	pow_mod(lhs, rhs, &m);
+}
+
+void pow_mod_2_test(Cigint *lhs, Cigint *rhs) {
+	Cigint m = 23127;
+	pow_mod_2(lhs, rhs, &m);
+}
+
+void cigint_add_wrap(Cigint *lhs, const Cigint *rhs) {
+	u64 carry = 0;
+	for (size_t i = CIGINT_N; i-- > 0;) {
+		carry = (u64) lhs->data[i] + (u64) rhs->data[i] + carry;
+		lhs->data[i] = (u32) carry;
+		carry >>= 32;
+	}
+}
 
 void benchmark() {
 	Cigint a, b;
-	cigint_fill_random(&a);
-	cigint_fill_random(&b);
-	Cigint r = a;
-
-	// a = 1;
-	// b = 2;
-	// r = cigint_mul(a, b);
-	// cprintf("mul = %Cd\n", r);
-	// r = a;
-	// cigint_mul_ref(&r, &b);
-	// cprintf("mul_ref = %Cd\n", r);
-	// r = a;
-	// a = 0;
-	// b = 0xFFFFFFFF;
-	// r = cigint_mul(a, b);
-	// cprintf("mul = %Cd\n", r);
-	// r = a;
-	// cigint_mul_ref(&r, &b);
-	// cprintf("mul_ref = %Cd\n", r);
-
-	cigint_fill_random(&a);
-	cigint_fill_random(&b);
-	cigint_printf("a = %Cd\n", a);
+	cigint_fill_more_random(&a);
+	cigint_fill_more_random(&b);
 	std::cout << "a = " << a << "\n";
 	std::cout << "b = " << b << "\n";
 	bench_func_ref("add_ref", cigint_add_ref, a, b);
-	bench_func("add", cigint_add, a, b);
-	bench_func_ref("mul_ref", cigint_mul_ref, a, b);
-	bench_func_refex("mul_refex", cigint_mul_refex, a, b, r);
-	bench_func_ref("mul_ref2", cigint_mul_ref2, a, b);
+	bench_func_ref("add_wrap", cigint_add_wrap, a, b);
+	// bench_func("add", cigint_add, a, b);
+	// bench_func_ref("mul_ref", cigint_mul_ref, a, b);
+	// bench_func_refex("mul_refex", cigint_mul_refex, a, b, r);
+	// bench_func_ref("mul_ref2", cigint_mul_ref2, a, b);
 	bench_func_ref("mul_2_ref2_b", cigint_mul_ref2_b, a, b);
-	bench_func_ref("mul_ref3", cigint_mul_ref3, a, b);
-	bench_func_ref("mul_ref3_b", cigint_mul_ref3_b, a, b);
-	bench_func_ref("mul_ref4", cigint_mul_ref_4, a, b);
-	bench_func_ref("mul_ref_old", cigint_mul_ref_old, a, b);
-	bench_func("mul_old", cigint_mul_old, a, b);
-	std::cout << "a = " << a << "\n";
-	std::cout << "b = " << b << "\n";
+	// bench_func_ref("mul_ref3_b", cigint_mul_ref3_b, a, b);
+	// bench_func_ref("mul_ref4", cigint_mul_ref_4, a, b);
+	bench_func_ref("mul_mode_school", mul_mode_school_test, a, b);
+	bench_func_ref("mul_mode_u32_school", mul_mode_u32_school_test, a, b);
+	bench_func_ref("mul_mode_wordwise", mul_mode_wordwise_test, a, b);
+	bench_func_ref("mul_mode_u32_school_2", mul_mode_u32_school_2_test, a, b);
+	bench_func_ref("divmod", divmod_ref_test, a, b);
+	bench_func_ref("pow_mod", pow_mod_test, a, b);
+	bench_func_ref("pow_mod_2", pow_mod_2_test, a, b);
+	auto x = a;
+	auto y = b;
+	mul_mode_school_test(&x, &y);
+	cigint_printf("rc = a * b % 23127 = %Cd\n", x);
+	x = a;
+	y = b;
+	mul_mode_u32_school_test(&x, &y);
+	cigint_printf("ru = a * b % 23127 = %Cd\n", x);
+	x = a;
+	y = b;
+	mul_mode_u32_school_2_test(&x, &y);
+	cigint_printf("ru2= a * b % 23127 = %Cd\n", x);
+	x = a;
+	y = b;
+	mul_mode_wordwise_test(&x, &y);
+	cigint_printf("rw = a * b % 23127 = %Cd\n", x);
+	x = a;
+	y = b;
+	pow_mod_test(&x, &y);
+	cigint_printf("p  = a ^ b % 23127 = %Cd\n", x);
+	x = a;
+	y = b;
+	pow_mod_2_test(&x, &y);
+	cigint_printf("p2 = a ^ b % 23127 = %Cd\n", x);
 }
 
 int main() {

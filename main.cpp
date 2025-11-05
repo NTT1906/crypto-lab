@@ -115,7 +115,8 @@ bool isPrime(const Cigint &n) {
 int main() {
 	Cigint tmp = {0};
 	tmp = cigint_from_dec("000001000A11");
-	cprintf("TMP: %Cd\n", tmp);
+	// std::cout << tmp;
+	// cprintf("TMP: %Cd\n", tmp);
 	tmp = cigint_from_str("12345678901234567890");
 	cprintf("TMP: %Cd\n", tmp);
 	tmp = cigint_from_str("0xdead_beef_012345");
