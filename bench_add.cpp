@@ -484,6 +484,16 @@ void cigint_add_wrap(Cigint *lhs, const Cigint *rhs) {
 	}
 }
 
+static inline void add_mod_fast(Cigint &a, const Cigint &b, const Cigint &m) {
+	u64 carry = 0;
+	for (size_t i = CIGINT_N; i-- > 0;) {
+		u64 t = (u64)a.data[i] + (u64)b.data[i] + carry;
+		a.data[i] = (u32)t;
+		carry = t >> SIZEOF_U32;
+	}
+	if (carry || cigint_cmp(a, m) >= 0) cigint_sub_ref(&a, &m);
+}
+
 void benchmark() {
 	Cigint a, b;
 	cigint_fill_more_random(&a);
@@ -496,40 +506,40 @@ void benchmark() {
 	// bench_func_ref("mul_ref", cigint_mul_ref, a, b);
 	// bench_func_refex("mul_refex", cigint_mul_refex, a, b, r);
 	// bench_func_ref("mul_ref2", cigint_mul_ref2, a, b);
-	bench_func_ref("mul_2_ref2_b", cigint_mul_ref2_b, a, b);
+	// bench_func_ref("mul_2_ref2_b", cigint_mul_ref2_b, a, b);
 	// bench_func_ref("mul_ref3_b", cigint_mul_ref3_b, a, b);
 	// bench_func_ref("mul_ref4", cigint_mul_ref_4, a, b);
-	bench_func_ref("mul_mode_school", mul_mode_school_test, a, b);
-	bench_func_ref("mul_mode_u32_school", mul_mode_u32_school_test, a, b);
-	bench_func_ref("mul_mode_wordwise", mul_mode_wordwise_test, a, b);
-	bench_func_ref("mul_mode_u32_school_2", mul_mode_u32_school_2_test, a, b);
-	bench_func_ref("divmod", divmod_ref_test, a, b);
-	bench_func_ref("pow_mod", pow_mod_test, a, b);
-	bench_func_ref("pow_mod_2", pow_mod_2_test, a, b);
-	auto x = a;
-	auto y = b;
-	mul_mode_school_test(&x, &y);
-	cigint_printf("rc = a * b % 23127 = %Cd\n", x);
-	x = a;
-	y = b;
-	mul_mode_u32_school_test(&x, &y);
-	cigint_printf("ru = a * b % 23127 = %Cd\n", x);
-	x = a;
-	y = b;
-	mul_mode_u32_school_2_test(&x, &y);
-	cigint_printf("ru2= a * b % 23127 = %Cd\n", x);
-	x = a;
-	y = b;
-	mul_mode_wordwise_test(&x, &y);
-	cigint_printf("rw = a * b % 23127 = %Cd\n", x);
-	x = a;
-	y = b;
-	pow_mod_test(&x, &y);
-	cigint_printf("p  = a ^ b % 23127 = %Cd\n", x);
-	x = a;
-	y = b;
-	pow_mod_2_test(&x, &y);
-	cigint_printf("p2 = a ^ b % 23127 = %Cd\n", x);
+	// bench_func_ref("mul_mode_school", mul_mode_school_test, a, b);
+	// bench_func_ref("mul_mode_u32_school", mul_mode_u32_school_test, a, b);
+	// bench_func_ref("mul_mode_wordwise", mul_mode_wordwise_test, a, b);
+	// bench_func_ref("mul_mode_u32_school_2", mul_mode_u32_school_2_test, a, b);
+	// bench_func_ref("divmod", divmod_ref_test, a, b);
+	// bench_func_ref("pow_mod", pow_mod_test, a, b);
+	// bench_func_ref("pow_mod_2", pow_mod_2_test, a, b);
+	// auto x = a;
+	// auto y = b;
+	// mul_mode_school_test(&x, &y);
+	// cigint_printf("rc = a * b % 23127 = %Cd\n", x);
+	// x = a;
+	// y = b;
+	// mul_mode_u32_school_test(&x, &y);
+	// cigint_printf("ru = a * b % 23127 = %Cd\n", x);
+	// x = a;
+	// y = b;
+	// mul_mode_u32_school_2_test(&x, &y);
+	// cigint_printf("ru2= a * b % 23127 = %Cd\n", x);
+	// x = a;
+	// y = b;
+	// mul_mode_wordwise_test(&x, &y);
+	// cigint_printf("rw = a * b % 23127 = %Cd\n", x);
+	// x = a;
+	// y = b;
+	// pow_mod_test(&x, &y);
+	// cigint_printf("p  = a ^ b % 23127 = %Cd\n", x);
+	// x = a;
+	// y = b;
+	// pow_mod_2_test(&x, &y);
+	// cigint_printf("p2 = a ^ b % 23127 = %Cd\n", x);
 }
 
 int main() {

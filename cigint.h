@@ -37,7 +37,7 @@ typedef struct Cigint {
 	u32 data[CIGINT_N];
 
 #ifdef __cplusplus
-	Cigint() : data{} {}
+	Cigint() = default;
 	Cigint(const Cigint &rhs) : data{} {
 		memcpy(this->data, rhs.data, sizeof(rhs.data));
 	}

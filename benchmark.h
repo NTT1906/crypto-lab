@@ -8,7 +8,7 @@
 using namespace std;
 using namespace std::chrono;
 
-constexpr int ITER = 10;
+constexpr int ITER = 10000;
 // constexpr int ITER = 1'000;
 
 // your sink
@@ -75,8 +75,8 @@ void bench(const string& name, Body&& body, int iters = ITER) {
     cout << left << setw(25) << name
          << " | first: " << right << setw(10) << first << " ns"
          << " | total_loop: " << setw(12) << total_loop << " ns"
-         << " | mean_loop: "  << setw(10) << fixed << setprecision(2) << mean_loop << " ns"
+         << " | mean_loop: "  << setw(12) << fixed << setprecision(2) << mean_loop << " ns"
          << " | total_body: " << right << setw(12) << total_body << " ns"
-         << " | mean_body: "  << setw(10) << fixed << setprecision(2) << mean_body << " ns\n";
+         << " | mean_body: "  << setw(12) << fixed << setprecision(2) << mean_body << " ns\n";
 }
 #endif // BENCHMARK_H

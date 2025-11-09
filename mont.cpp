@@ -25,9 +25,8 @@
 #include <random>    // Dùng để tạo số ngẫu nhiên
 
 #define CIGINT_IMPLEMENTATION
-// ĐỊNH NGHĨA CIGINT_N (ví dụ: 16 cho 512-bit)
 #ifndef CIGINT_N
-#define CIGINT_N 16
+#define CIGINT_N 2
 #endif
 
 #include "cigint.h" // File .h của bạn
@@ -46,6 +45,12 @@ typedef struct Cigint2N {
 } Cigint2N;
 
 // Lấy bit từ Cigint2N (MSW-first)
+// u32 get_bit_2N_msw(const Cigint2N *a, u32 pos) {
+// 	assert(pos < CIGINT_N * 2 * SIZEOF_U32);
+// 	size_t data_index = (CIGINT_N * 2) - 1 - (pos / SIZEOF_U32);
+// 	return (a->data[data_index] >> (pos % SIZEOF_U32)) & 1u;
+// }
+
 u32 get_bit_2N_msw(const Cigint2N *a, u32 pos) {
 	assert(pos < CIGINT_N * 2 * SIZEOF_U32);
 	size_t data_index = (CIGINT_N * 2) - 1 - (pos / SIZEOF_U32);
@@ -77,7 +82,7 @@ u32 highest_order_2N_msw(const Cigint2N *num) {
 		}
 	}
 	// Kiểm tra bit 0 (nếu số là 0)
-	if (num->data[CIGINT_N*2 - 1] == 0) return 0;
+	if (num->data[CIGINT_N * 2 - 1] == 0) return 0;
 	return 0; // là 0
 }
 
@@ -100,7 +105,7 @@ void shl_1_N_msw(Cigint* rem) {
  * Phép nhân Đầy đủ (MSW-first): C(2N) = A(N) * B(N)
  */
 void cigint_mul_full_msw(Cigint2N* C_res, const Cigint* A, const Cigint* B) {
-	for(size_t i = 0; i < CIGINT_N * 2; ++i) C_res->data[i] = 0;
+	for(unsigned int & i : C_res->data) i = 0;
 	for (ssize_t i = CIGINT_N - 1; i >= 0; --i) {
 		u64 carry = 0;
 		for (ssize_t j = CIGINT_N - 1; j >= 0; --j) {
@@ -116,18 +121,11 @@ void cigint_mul_full_msw(Cigint2N* C_res, const Cigint* A, const Cigint* B) {
 /**
  * Phép chia Đầy đủ (MSW-first): (Q, R) = A(2N) / B(N)
  */
-void cigint_divmod_full_msw(Cigint *q, Cigint *r,
-							const Cigint2N *lhs, const Cigint *rhs)
-{
+void cigint_divmod_full_msw(Cigint *q, Cigint *r, const Cigint2N *lhs, const Cigint *rhs) {
 	assert(!cigint_is0_ref(rhs));
-	if (q) {
-		*q = CIGINT_ZERO();
-	}
-	if (r) {
-		*r = CIGINT_ZERO();
-	}
+	if (q) *q = CIGINT_ZERO();
+	if (r) *r = CIGINT_ZERO();
 	u32 top = highest_order_2N_msw(lhs);
-
 	if (top == 0 && get_bit_2N_msw(lhs, 0) == 0) return; // lhs là 0
 
 	for (int bit = (int)top; bit >= 0; --bit) {
@@ -191,40 +189,77 @@ u32 tinh_m_inv(u32 m0) {
 	return (u32)(0 - inv);
 }
 
-/** [Helper] So sánh T(N+1, LSW) >= m(N, MSW) */
+// /** [Helper] So sánh T(N+1, LSW) >= m(N, MSW) */
+// static bool lsw_array_gte_msw_cigint(const u32* T, const Cigint* m) {
+// 	if (T[CIGINT_N] != 0) return true;
+// 	for (size_t i = 0; i < CIGINT_N; ++i) {
+// 		u32 t_val = T[(CIGINT_N - 1) - i];
+// 		u32 m_val = m->data[i];
+// 		if (t_val > m_val) return true;
+// 		if (t_val < m_val) return false;
+// 	}
+// 	return true;
+// }
+//
+// /** [Helper] Trừ: T(N+1, LSW) = T - m(N, MSW) */
+// static void lsw_array_sub_msw_cigint(u32* T, const Cigint* m) {
+// 	u64 borrow = 0;
+// 	for (size_t i = 0; i < CIGINT_N; ++i) {
+// 		u64 m_i = m->data[(CIGINT_N - 1) - i];
+// 		u64 temp = (u64)T[i] + 0x100000000 - m_i - borrow;
+// 		T[i] = (u32)temp;
+// 		borrow = (temp >> 32) == 0 ? 1 : 0;
+// 	}
+// 	T[CIGINT_N] = T[CIGINT_N] - (u32)borrow;
+// }
+
+// So sánh: return true iff T (N+1 words, LSW at T[0]) >= m (Cigint, MSW at m->data[0])
 static bool lsw_array_gte_msw_cigint(const u32* T, const Cigint* m) {
+	// Nếu phần cao nhất (beyond N words) != 0 thì T >= m
 	if (T[CIGINT_N] != 0) return true;
+
+	// So sánh từ MSW -> LSW: T_word_at_pos = T[(N-1)-i], m->data[i]
 	for (size_t i = 0; i < CIGINT_N; ++i) {
 		u32 t_val = T[(CIGINT_N - 1) - i];
 		u32 m_val = m->data[i];
 		if (t_val > m_val) return true;
 		if (t_val < m_val) return false;
 	}
-	return true;
+	return true; // equal => >=
 }
 
-/** [Helper] Trừ: T(N+1, LSW) = T - m(N, MSW) */
+// Trừ: T = T - m (T LSW-ordered, m MSW-ordered). Assumes T >= m.
 static void lsw_array_sub_msw_cigint(u32* T, const Cigint* m) {
-	u64 borrow = 0;
+	unsigned int borrow = 0;
 	for (size_t i = 0; i < CIGINT_N; ++i) {
-		u64 m_i = m->data[(CIGINT_N - 1) - i];
-		u64 temp = (u64)T[i] + 0x100000000 - m_i - borrow;
-		T[i] = (u32)temp;
-		borrow = (temp >> 32) == 0 ? 1 : 0;
+		// m_i in LSW order
+		u64 m_i = (u64)m->data[(CIGINT_N - 1) - i];
+		u64 t_i = (u64)T[i];
+
+		u64 subtrahend = m_i + borrow;
+		if (t_i < subtrahend) {
+			// need borrow from higher word
+			T[i] = (u32)( (1ULL << 32) + t_i - subtrahend );
+			borrow = 1;
+		} else {
+			T[i] = (u32)(t_i - subtrahend);
+			borrow = 0;
+		}
 	}
-	T[CIGINT_N] = T[CIGINT_N] - (u32)borrow;
+	// propagate final borrow into T[N] (it should be 0 or 1)
+	if (borrow) {
+		// since we assumed T >= m, this should only decrement T[N] by 1
+		T[CIGINT_N] = T[CIGINT_N] - 1;
+	}
 }
 
-/**
- * (ĐƯỜNG NHANH 1) Phép nhân Montgomery: res = (A * B * R^-1) % m
- */
-void cigint_montmul_ref(Cigint* res,
-						const Cigint* A,
-						const Cigint* B,
-						const Cigint* m,
-						u32 m_inv)
-{
-	u32 T[CIGINT_N + 2] = {0};
+// /**
+//  * (ĐƯỜNG NHANH 1) Phép nhân Montgomery: res = (A * B * R^-1) % m
+//  */
+
+void cigint_montmul_ref(Cigint *res, const Cigint *A, const Cigint* B, const Cigint* m, u32 m_inv) {
+	// u32 T[CIGINT_N + 2] = {0};
+	u32 T[CIGINT_N * 2] = {0};
 	for (size_t i = 0; i < CIGINT_N; ++i) {
 		u64 A_i = A->data[(CIGINT_N - 1) - i]; // Lấy A LSW
 		u64 carry_mul = 0;
@@ -262,7 +297,6 @@ void cigint_montmul_ref(Cigint* res,
 	}
 }
 
-
 //==============================================================================
 // PHẦN 4: HÀM LŨY THỪA MODULAR (CẢ HAI CÁCH)
 //==============================================================================
@@ -271,11 +305,7 @@ void cigint_montmul_ref(Cigint* res,
 /**
  * (ĐƯỜNG NHANH 2) Tính C = (A ^ B_exp) % m (Dùng Montgomery)
  */
-void cigint_mod_pow_mont(Cigint* C_res,
-						 const Cigint* A,
-						 const Cigint* B_exp,
-						 const Cigint* m)
-{
+void cigint_mod_pow_mont(Cigint* C_res, const Cigint* A, const Cigint* B_exp, const Cigint* m) {
 	// === 1. SETUP (Dùng "đường chậm" 1 lần) ===
 	if ((m->data[CIGINT_N - 1] & 1) == 0) {
 		throw std::runtime_error("mod_pow_mont yeu cau m la so le!");
@@ -365,12 +395,15 @@ int main() {
 	// Cigint m = cigint_from_u32(13);
 
 	Cigint A, B_exp, m;
-	cigint_randomize(A);
-	cigint_randomize(B_exp);
-	cigint_randomize(m);
-	cigint_set_bit_ref(&m, 0, 1);
-	A = cigint_mod(A, m);
-	B_exp = cigint_mod(B_exp, m);
+	A = cigint_from_dec("16932033513393476012");
+	B_exp = cigint_from_dec("5896503122027280589");
+	m = cigint_from_dec("17026143986254644813");
+	// cigint_randomize(A);
+	// cigint_randomize(B_exp);
+	// cigint_randomize(m);
+	// cigint_set_bit_ref(&m, 0, 1);
+	// A = cigint_mod(A, m);
+	// B_exp = cigint_mod(B_exp, m);
 
 	// Đảm bảo A, B < m
 	// Cigint Q_tmp;
@@ -400,8 +433,8 @@ int main() {
 		} else {
 			std::cout << "THAT BAI: Ket qua khac nhau!" << '\n';
 		}
-		bench_func_ref("slow pow", cigint_mod_pow_slow, A, B_exp, m);
-		bench_func_ref("fast pow", cigint_mod_pow_mont, A, B_exp, m);
+		// bench_func_ref("slow pow", cigint_mod_pow_slow, A, B_exp, m);
+		// bench_func_ref("fast pow", cigint_mod_pow_mont, A, B_exp, m);
 	} catch (const std::exception& e) {
 		std::cerr << "Loi: " << e.what() << '\n';
 		return 1;
@@ -409,44 +442,3 @@ int main() {
 
 	return 0;
 }
-
-/*
-arie@riu:/mnt/d/code/clion/rsa/pj01$ clang++ -std=c++11 -O3 -o build/mont mont.cpp && time ./build/mont
-So sanh ModPow voi CIGINT_N = 16
-A = 5261998459720446031500048427090623823792614428383144054065338592856451637373275597911461670493814136936613752226202151350833767674991477653065742073987072
-B = 7773590872963302168272366357510037865734822014962975630652940859056315390104470313404699458565404948682022475441755571435475597042539427583789976006950912
-M = 8268672668087514775549422373389396167487618420469639172150726905715514755600006582522274660389142446858251543216019263780816598587954659141926525863985153
-----------------------------------
-Dang tinh (Duong cham)...
-  = 543594517371464096836353503789050093415201007224714982879953895819706634155723480840813551950311382804848048458898662903052270925324365094778701786441701
-
-Dang tinh (Duong nhanh - Montgomery)...
-  = 0
-----------------------------------
-THAT BAI: Ket qua khac nhau!
-slow pow                  | first:    4488447 ns | total_loop:     42373352 ns | mean_loop: 4237335.20 ns | total_body:     45446315 ns | mean_body: 4544631.50 ns
-fast pow                  | first:     226635 ns | total_loop:      2220215 ns | mean_loop:  222021.50 ns | total_body:      4309604 ns | mean_body:  430960.40 ns
-
-real    0m0.106s
-user    0m0.094s
-sys     0m0.000s
-arie@riu:/mnt/d/code/clion/rsa/pj01$ clang++ -std=c++11 -O3 -o build/mont mont.cpp && time ./build/mont
-So sanh ModPow voi CIGINT_N = 16
-A = 3438367493429774771194109689844409306293633602261297566362431914950694924103491322818517530648565533696818620454955712609475262880567468503135096162746368
-B = 3594175511759957356553865621811228396456498972217267101931408849396155160206665938638266909576210810772137577236099641365899838777525935563439237079498750
-M = 4112305424469835461035947057990203436912520755608847638615751288220559788709587106965263847095266358487654433051580804910713390948439018717507287489970177
-----------------------------------
-Dang tinh (Duong cham)...
-  = 266992233805621536605077615377058684385462949587169934509240032320262302582227411086197782787260292471670699020219877281897476350757600348606749084759093
-
-Dang tinh (Duong nhanh - Montgomery)...
-  = 266992233805621536605077615377058684385462949587169934509240032320262302582227411086197782787260292471670699020219877281897476350757600348606749084759093
-----------------------------------
-THANH CONG: Ca hai ket qua giong nhau!
-slow pow                  | first:    8432246 ns | total_loop:     86383749 ns | mean_loop: 8638374.90 ns | total_body:     81314489 ns | mean_body: 8131448.90 ns
-fast pow                  | first:     335662 ns | total_loop:      3359451 ns | mean_loop:  335945.10 ns | total_body:      3352614 ns | mean_body:  335261.40 ns
-
-real    0m0.187s
-user    0m0.171s
-sys     0m0.000s
-*/
