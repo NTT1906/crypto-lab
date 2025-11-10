@@ -13,6 +13,19 @@ typedef uint64_t u64;
 #define BI_N (512 / 32)
 #endif
 
+#if defined(__GNUC__) || defined(__clang__)
+#define GNU_BUILTIN
+#endif
+
+#if defined(_MSC_VER)
+#define ALWAYS_INLINE __forceinline
+#elif defined(__GNUC__) || defined(__clang__)
+#define ALWAYS_INLINE inline __attribute__((always_inline))
+#else
+#define ALWAYS_INLINE inline
+#endif
+
+// big endian: data[0] = MSW
 struct bui : std::array<u32, BI_N> {};
 struct bul : std::array<u32, BI_N * 2> {};
 
@@ -31,12 +44,12 @@ constexpr bui bui_from_u32(const u32 x) {
 constexpr bul bul0() { return {}; }
 
 constexpr bul bul1() {
-	bul r = {}; r[BI_N - 1] = 1;
+	bul r = {}; r[BI_N * 2 - 1] = 1;
 	return r;
 }
 
 inline bul bul_from_u32(const u32 x) {
-	bul r = {}; r[BI_N - 1] = x;
+	bul r = {}; r[BI_N * 2 - 1] = x;
 	return r;
 }
 
@@ -59,62 +72,123 @@ inline bui bul_high(const bul& x) {
 }
 
 inline bul bui_to_bul(const bui& input) {
-	bul result = {};
-	std::copy(input.begin(), input.end(), result.begin());
-	return result;
+	bul r{};
+	std::copy(input.begin(), input.end(), r.begin() + BI_N);
+	return r;
+}
+
+std::string bui_to_dec(const bui& x);
+bui bui_from_dec(const std::string& s);
+
+int cmp(const bui &a, const bui &b);
+void add_ip(bui& a, const bui& b);
+void add_ip(bul& a, const bul& b);
+void sub_ip(bui& a, const bui& b);
+
+inline int cmp(const bui &a, const bui &b) {
+	for (u32 i = 0; i < BI_N; ++i) {
+		if (a[i] != b[i])
+			return a[i] > b[i] ? 1 : -1;
+	}
+	return 0;
 }
 
 // a += b;
 inline void add_ip(bui& a, const bui& b) {
-	u32 carry = 0;
-	for (int i = BI_N - 1; i >= 0; --i) {  // Iterate from LSW to MSW
-		u64 sum = static_cast<u64>(a[i]) + b[i] + carry;
-		a[i] = static_cast<u32>(sum);
-		carry = static_cast<u32>(sum >> 32);  // Propagate the carry to the next iteration
+	u32 c = 0, i = BI_N;
+	while (i-- > 0) {
+#ifdef GNU_BUILTIN
+		c = __builtin_add_overflow(a[i], b[i] + c, &a[i]);
+#else
+		u64 s = (u64)a[i] + b[i] + c;
+		a[i] = (u32)s;
+		c = s >> 32;
+#endif
 	}
 }
 
+// a += b
 inline void add_ip(bul& a, const bul& b) {
-	u32 carry = 0;
-	for (int i = BI_N * 2 - 1; i >= 0; --i) {  // Iterate from LSW to MSW
-		u64 sum = static_cast<u64>(a[i]) + b[i] + carry;
-		a[i] = static_cast<u32>(sum);
-		carry = static_cast<u32>(sum >> 32);  // Propagate the carry to the next iteration
+	u32 c = 0, i = BI_N * 2;
+	while (i-- > 0) {
+#ifdef GNU_BUILTIN
+		c = __builtin_add_overflow(a[i], b[i] + c, &a[i]);
+#else
+		u64 s = (u64)a[i] + b[i] + c;
+		a[i] = (u32)s;
+		c = s >> 32;
+#endif
 	}
 }
 
+// r = a + b
 inline bui add(bui a, const bui& b) {
 	add_ip(a, b);
 	return a;
 }
 
-// a -= b; // assume a > b
-inline void sub_ip(bui& a, const bui& b) {
-	u32 borrow = 0;
-	for (int i = BI_N - 1; i >= 0; --i) {  // Iterate from LSW to MSW
-		u64 diff = static_cast<u64>(a[i]) - b[i] - borrow;
-		a[i] = static_cast<u32>(diff);
-		borrow = (diff > a[i]) ? 1 : 0;  // Borrow occurs if there is underflow
+// a = (a + b) % m
+inline void add_mod_ip(bui &a, const bui &b, const bui &m) {
+	u32 c = 0;
+	for (u32 i = BI_N; i-- > 0;) {
+#ifdef GNU_BUILTIN
+		c = __builtin_add_overflow(a[i], b[i] + c, &a[i]);
+#else
+		u64 s = (u64)a[i] + (u64)b[i] + c;
+		a[i] = (u32)s;
+		c = s >> 32;
+#endif
+	}
+	if (c || cmp(a, m) >= 0) {
+		sub_ip(a, m);
 	}
 }
+
+// a -= b; // assume a > b
+#ifdef GNU_BUILTIN
+inline void sub_ip(bui& a, const bui& b) {
+	u32 borrow = 0, i = BI_N;
+	while (i-- > 0)
+		borrow = __builtin_sub_overflow(a[i], b[i] + borrow, &a[i]);
+}
+#else
+inline void sub_ip(bui& a, const bui& b) {
+	u32 borrow = 0, i = BI_N;
+	while (i-- > 0) {
+		u64 d = (u64)a[i] - b[i] - borrow;
+		a[i] = static_cast<u32>(d);
+		borrow = d > a[i] ? 1 : 0; // borrow occurs if there is underflow
+	}
+}
+#endif
 
 inline bui sub(bui a, const bui& b) {
 	sub_ip(a, b);
 	return a;
 }
 
-inline bul mul(const bui& a, const bui& b) {
-	bul result = {};
-	for (int i = BI_N - 1; i >= 0; --i) {
-		u32 carry = 0;
-		for (int j = BI_N - 1; j >= 0; --j) {
-			u64 product = static_cast<u64>(a[i]) * b[j] + result[i + j + 1] + carry;
-			result[i + j + 1] = static_cast<u32>(product);
-			carry = product >> 32;
+inline void mul_ref(const bui &a, const bui &b, bul &r) {
+	for (u32 i = BI_N; i-- > 0;) {
+		u32 c = 0;
+		for (u32 j = BI_N; j-- > 0;) {
+			u64 p = (u64)a[i] * b[j] + r[i + j + 1] + c;
+			r[i + j + 1] = (u32)p;
+			c = p >> 32;
 		}
-		result[i] += carry;
+		r[i] += c;
 	}
-	return result;
+}
+
+inline void mul_ip(bui &a, const bui &b) {
+	bul r{};
+	mul_ref(a, b, r);
+	a = bul_low(r);
+}
+
+inline bul mul(const bui& a, const bui& b) {
+	bul r{};
+	mul_ref(a, b, r);
+	return r;
 }
 
 inline bui mul_low(const bui& a, const bui& b) {
@@ -122,19 +196,47 @@ inline bui mul_low(const bui& a, const bui& b) {
 	return bul_low(r);
 }
 
+inline void bui_u32divmod(const bui& a, u32 b, bui& q, u32& r) {
+	q = {};
+	r = 0;
+	for (int i = 0; i < BI_N; ++i) {
+		u64 dividend = (u64)r << 32 | a[i];
+		q[i] = (u32)(dividend / b);
+		r = (u32)(dividend % b);
+	}
+}
+
 inline bool is_space_c(char c) {
 	return c == ' ' || c == '\t';
 }
 
-inline void bui_u32divmod(const bui& a, u32 b, bui& q, u32& r) {
-	q = bui{};
-	r = 0;
-
-	for (int i = 0; i < BI_N; ++i) {
-		u64 dividend = (static_cast<u64>(r) << 32) | a[i];
-		q[i] = static_cast<u32>(dividend / b);
-		r = static_cast<u32>(dividend % b);
+ALWAYS_INLINE u32 dbl_ip_imp(bui &x) {
+	u32 c = 0, i = BI_N;
+	while (i-- > 0) {
+		u32 v = x[i];
+		u32 nv = v << 1 | c;
+		c = v >> 31;
+		x[i] = nv;
 	}
+	return c;
+}
+
+// x = 2x (= x << 1)
+inline void dbl_ip(bui &x) {
+	dbl_ip_imp(x);
+}
+
+// x = (2x) % m
+static void dbl_mod_ip(bui &x, const bui &m) {
+	if (dbl_ip_imp(x) || cmp(x, m) >= 0)
+		sub_ip(x, m);
+}
+
+inline int hex_val(unsigned char c) {
+	if (c >= '0' && c <= '9') return c - '0';
+	if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+	if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+	return -1;
 }
 
 std::string bui_to_dec(const bui& x) {
@@ -144,64 +246,44 @@ std::string bui_to_dec(const bui& x) {
 	size_t count = 0;
 	bui n = x;
 	bui q;
-
-	// Divide by BASE until the quotient is zero
 	while (!bui_is0(n)) {
 		u32 r;
 		bui_u32divmod(n, 100000000U, q, r);
 		rems[count++] = r;
 		n = q;
 	}
-
-	// First chunk is printed without leading zeros
+	// first chunk is printed without leading zeros
 	result += std::to_string(rems[count - 1]);
-
-	// Remaining chunks, padded with leading zeros
+	// remaining chunks, padded with leading zeros
 	for (size_t i = count - 2; i < count; --i) {
 		result += std::string(8 - std::to_string(rems[i]).size(), '0') + std::to_string(rems[i]);
 	}
-
 	return result;
 }
 
 bui bui_from_dec(const std::string& s) {
 	assert(!s.empty() && "bui_from_dec: empty string");
-
-	bui out = bui0();
 	size_t i = 0;
-
-	// Skip leading spaces and optional '+' sign
-	while (i < s.size() && is_space_c(s[i])) ++i;
-	if (i < s.size() && s[i] == '+') ++i;
-	assert(i < s.size() && "bui_from_dec: invalid string format");
-
-	// Skip leading zeros and underscores
-	while (i < s.size() && (s[i] == '0' || s[i] == '_')) ++i;
-
+	// skip leading spaces and optional '+'
+	while (is_space_c(s[i])) ++i;
+	if (s[i] == '+') ++i;
+	assert(s[i] != '-' && "bui_from_dec: negative not supported");
+	// skip leading zeros, underscores, spaces
+	while (s[i] == '0' || s[i] == '_') ++i;
 	bool any_digit = false;
-
-	// Process each digit in the decimal string
+	// process each digit in the decimal string
+	constexpr bui n10 = bui_from_u32(10u);
+	bui out{};
+	bui tmp{};
 	for (; i < s.size(); ++i) {
 		char c = s[i];
-		if (c == '_' || is_space_c(c)) continue;  // Ignore underscores and spaces
+		if (c == '_' || is_space_c(c)) continue;
 		if (c < '0' || c > '9') break;  // Stop if non-digit is encountered
 		any_digit = true;
-
-		// Convert the character to its numeric value
-		u32 digit = c - '0';
-
-		// Shift the current number by one place (multiply by 10)
-		u32 carry = 0;
-		for (int j = BI_N - 1; j >= 0; --j) {
-			u64 temp = static_cast<u64>(out[j]) * 10 + carry;
-			out[j] = static_cast<u32>(temp);
-			carry = static_cast<u32>(temp >> 32);  // Propagate the carry
-		}
-
-		// Add the current digit (without carry)
-		out[BI_N - 1] += digit;
+		mul_ip(out, n10);
+		tmp[BI_N - 1] = c - '0';
+		add_ip(out, tmp);
 	}
-
 	assert(any_digit && "bui_from_dec: no digits found");
 	return out;
 }
@@ -211,6 +293,15 @@ inline u32 highest_limb(bui &x) {
 		if (x[i] > 0) return BI_N - i - 1;
 	return 0;
 }
+
+inline void shift_left_limb(bul &x, u32 l) {
+	if (l == 0) return;
+	std::copy(x.begin() + l, x.end(), x.begin());
+	std::fill(x.end() - l, x.end(), 0);
+}
+
+
+
 
 inline bul karatsuba(const bui& a, const bui& b, u32 size) {
 	bul result = {};  // The final result will be a bul.
