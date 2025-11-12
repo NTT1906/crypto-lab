@@ -270,7 +270,7 @@ static Poly poly_pow_1x_win4(const Cigint &n, const Cigint &modn) {
 
 	// precompute P[1..15] = base^d
 	Poly P[16];
-	P[0] = Poly{}; for (int i = 0; i < R; ++i) P[0].c[i] = CIGINT_ZERO();
+	P[0] = {}; for (int i = 0; i < R; ++i) P[0].c[i] = CIGINT_ZERO();
 	P[1] = base;
 	for (int d = 2; d <= 15; ++d) P[d] = POLY_MUL(P[d - 1], base, modn);
 

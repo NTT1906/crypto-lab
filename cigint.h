@@ -325,14 +325,14 @@ Cigint cigint_xor(Cigint lhs, CFREF(Cigint) rhs) {
 Cigint cigint_shl(CFREF(Cigint) lhs, u32 amnt) {
 	if (amnt == 0) return lhs;
 
-	const size_t limb_off = amnt / SIZEOF_U32;
+	const u32 limbs = amnt / SIZEOF_U32;
 	const u32 bits = amnt % SIZEOF_U32;
 
-	if (limb_off >= CIGINT_N) return CIGINT_ZERO(); // everything shifted out
+	if (limbs >= CIGINT_N) return CIGINT_ZERO(); // everything shifted out
 	Cigint r = (Cigint){0};
 	// Phase 1: limb-only move (toward MSW)
-	for (size_t i = 0; i + limb_off < CIGINT_N; ++i)
-		r.data[i] = lhs.data[i + limb_off];
+	for (size_t i = 0; i + limbs < CIGINT_N; ++i)
+		r.data[i] = lhs.data[i + limbs];
 	// Phase 2: intra-word stitch (only if bits != 0)
 	if (bits) {
 		u32 snapshot[CIGINT_N];
