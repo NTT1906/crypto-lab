@@ -106,6 +106,14 @@ inline u32 highest_bit(const bui &x) {
 	return 0; // all limbs zero
 }
 
+inline u32 highest_bit(const bul &x) {
+	for (size_t i = 0; i < BI_N * 2; ++i) {
+		if (x[i] > 0)
+			return highest_bit(x[i]) + (BI_N * 2 - i - 1) * SBU32;
+	}
+	return 0; // all limbs zero
+}
+
 inline u32 highest_limb(const bui &x) {
 	for (size_t i = 0; i < BI_N; ++i)
 		if (x[i] > 0) return BI_N - i - 1;
@@ -165,6 +173,14 @@ void dbl_ip(bui &x);
 
 inline int cmp(const bui &a, const bui &b) {
 	for (u32 i = 0; i < BI_N; ++i) {
+		if (a[i] != b[i])
+			return a[i] > b[i] ? 1 : -1;
+	}
+	return 0;
+}
+
+inline int cmp(const bul &a, const bul &b) {
+	for (u32 i = 0; i < BI_N * 2; ++i) {
 		if (a[i] != b[i])
 			return a[i] > b[i] ? 1 : -1;
 	}
