@@ -65,6 +65,8 @@ class MontgomeryReducer:
 
     # The range of x is unlimited
     def convert_in(self, x: int) -> int:
+        # print(f"SL: {x << self.reducerbits}")
+        # print(f"TM: {(x << self.reducerbits) % self.modulus}")
         return (x << self.reducerbits) % self.modulus
 
 
@@ -78,7 +80,9 @@ class MontgomeryReducer:
         mod: int = self.modulus
         assert (0 <= x < mod) and (0 <= y < mod)
         product: int = x * y
-        print(f"1: p   = {product}")
+        # print(f"x      = {x}")
+        # print(f"y      = {y}")
+        # print(f"1: p   = {product}")
 
         temp: int = ((product & self.mask) * self.factor) & self.mask
         # t1: int = product & self.mask
@@ -86,14 +90,14 @@ class MontgomeryReducer:
         # t2: int = t1 * self.factor
         # print(f"2.2: t2= {t2}")
         # temp: int = t2 & self.mask
-        print(f"2: temp= {temp}")
+        # print(f"2: temp= {temp}")
 
         reduced: int = (product + temp * mod) >> self.reducerbits
-        print(f"3.1: r1= {temp * mod}")
-        print(f"3.2: r2= {product + temp * mod}")
-        print(f"3: redu= {reduced}")
+        # print(f"3.1: r1= {temp * mod}")
+        # print(f"3.2: r2= {product + temp * mod}")
+        # print(f"3: redu= {reduced}")
         result: int = reduced if (reduced < mod) else (reduced - mod)
-        print(f"4: resu= {result}")
+        # print(f"4: resu= {result}")
         assert 0 <= result < mod
         return result
 
@@ -104,6 +108,7 @@ class MontgomeryReducer:
         if y < 0:
             raise ValueError("Negative exponent")
         z: int = self.convertedone
+        # print(f"Highest bit of e: {y.bit_length()}\n")
         while y != 0:
             if y & 1 != 0:
                 z = self.multiply(z, x)
@@ -112,11 +117,22 @@ class MontgomeryReducer:
         return z
 
 if __name__ == "__main__":
-    mr = MontgomeryReducer(896947)
-    u = 123456789
-    v = 6713
+    u = 260428835329122752520818469321216072583938198616075453742527759001901820374664228839496959095353854544158481165265966459
+    v = 1312312317639123213
+    mr = MontgomeryReducer(823887783191267813656599693818502133610549771176609410328824491902309472167445766968176579098197424208002485918297593219)
+    # u = 260428835329122752520818469321216072583938198616075453742527
+    # v = 1312312317639123213
+    # mr = MontgomeryReducer(108579795932485217312615519053)
+    # print(f"reducerBits= {mr.reducerbits}")
+    # print(f"reciprocal = {mr.reciprocal}")
+    # print(f"mask       = {mr.mask}")
+    # print(f"reducer    = {mr.reducer}")
+    # print(f"factor     = {mr.factor}")
+    # print(f"c1         = {mr.convertedone}")
+
     cu = mr.convert_in(u)
+    # print(f"cu={cu}")
     r = mr.pow(cu, v)
     cr = mr.convert_out(r)
-    print(f"r ={r}\ncr={cr}")
+    # print(f"r ={r}\ncr={cr}")
     # unittest.main()

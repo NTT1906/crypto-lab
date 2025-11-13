@@ -74,7 +74,9 @@ inline u32 get_bit(const bui &a, u32 pos) {
 
 // set in-place
 inline void set_bit_ip(bui &a, u32 pos, u32 val) {
+	if (pos >= BI_N * SBU32) {
 	assert(pos < BI_N * SBU32);
+	}
 	u32 k = BI_N - 1 - pos / SBU32;
 	a[k] = set_bit(a[k], pos % 32, val);
 }
@@ -282,6 +284,9 @@ ALWAYS_INLINE void mul_imp(const u32* a, const u32* b, u32* r, const u32 n) {
 			r[i + j + 1] = (u32)p;
 			c = p >> 32;
 		}
+		if (r[i] + c < r[i]) {
+			printf("LOL,ov\n");
+		}
 		r[i] += c;
 	}
 }
@@ -391,6 +396,19 @@ inline void shift_right_ip(bui& x, const u32 amnt) {
 inline void shift_right_ip(bul& x, u32 amnt) {
 	shift_right_ip_imp(x.data(), BI_N * 2, amnt);
 }
+
+// TODO: assert size
+bui bui_pow2(u32 bits) {
+	bui r{};
+	set_bit_ip(r, bits, 1);
+	return r;
+}
+
+// bul bul_pow2(u32 bits) {
+// 	bul r;
+// 	set_bit_ip(r, BI_N - 1 - bits, 1);
+// 	return r;
+// }
 
 inline void u32divmod(const bui& a, u32 b, bui& q, u32& r) {
 	q = {};
@@ -622,6 +640,61 @@ std::string bui_to_dec(const bui& x) {
 		result += std::string(8 - std::to_string(rems[i]).size(), '0') + std::to_string(rems[i]);
 	}
 	return result;
+}
+
+// Divide a double-width big-int (bul, MSW at index 0) by a 32-bit divisor.
+// q := a / d (quotient), returns remainder r = a % d.
+// Requires: d != 0
+static inline u32 u32_divmod_bul(const bul &a, u32 d, bul &q) {
+	// a has limbs a.data()[0] .. a.data()[2*BI_N-1], MSW at index 0
+	// We'll produce quotient limbs in q with same layout.
+	u64 rem = 0;
+	const u32 total = BI_N * 2;
+	// initialize quotient to zero
+	for (u32 i = 0; i < total; ++i) q.data()[i] = 0;
+
+	for (u32 i = 0; i < total; ++i) {
+		// bring down next limb
+		rem = (rem << 32) | (u64)(a.data()[i]);
+		// quotient limb fits in 32 bits because rem < d * 2^32 here
+		u32 qi = (u32)(rem / d);
+		q.data()[i] = qi;
+		rem = rem - (u64)qi * (u64)d; // rem = rem % d
+	}
+	return (u32)rem;
+}
+
+// test for zero on raw bul data pointer (helper you had earlier)
+static inline bool bul_is0_ptr(const u32 *p) {
+	for (u32 i = 0; i < BI_N * 2; ++i) if (p[i] != 0) return false;
+	return true;
+}
+
+#include <vector>
+// Convert bul to decimal string using base 1e9 chunks.
+std::string bul_to_dec(const bul& x) {
+	if (bul_is0_ptr(x.data())) return "0";
+
+	// use base = 1e9 so each remainder fits in 32-bit
+	constexpr u32 BASE = 1000000000u;
+
+	std::vector<u32> parts;            // least-significant chunk first
+	bul n = x;                         // mutable copy
+	bul q;                             // quotient placeholder
+
+	while (!bul_is0_ptr(n.data())) {
+		u32 r = u32_divmod_bul(n, BASE, q);
+		parts.push_back(r);
+		n = q;
+	}
+
+	// build decimal string: highest part without padding, others padded to 9 digits
+	std::ostringstream oss;
+	oss << parts.back(); // most-significant chunk
+	for (int i = (int)parts.size() - 2; i >= 0; --i) {
+		oss << std::setw(9) << std::setfill('0') << parts[i];
+	}
+	return oss.str();
 }
 
 bui bui_from_dec(const std::string& s) {

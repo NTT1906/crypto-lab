@@ -106,18 +106,12 @@ bui bitwise_and(bui a, bui b) {
 bool modinv(bui a, const bui &m, bui &inv_out) {
 	// invalid modulus or zero
 	if (bui_is0(m)) return false;
-
-	// reduce a modulo m: a = a % m
-	if (cmp(a, m) >= 0) {
-		a = mod(a, m);
-	}
-
+	if (cmp(a, m) >= 0) a = mod(a, m);
 	if (bui_is0(a)) return false; // zero has no inverse
 
 	// Initialize: r0 = m, r1 = a; t0 = 0, t1 = 1
-	bui r0 = m;
-	bui r1 = a;
-	bui t0 = bui0();
+	bui r0 = m, r1 = a;
+	bui t0{};
 	bui t1 = bui1();
 
 	while (!bui_is0(r1)) {
@@ -162,6 +156,12 @@ bool modinv(bui a, const bui &m, bui &inv_out) {
 	return true;
 }
 
+bui shift_left_mod(bui x, int shift, const bui& m) {
+	bui p2 = bui_pow2(shift);
+	mul_mod_ip(x, p2, m);
+	return x;
+}
+
 struct MontgomeryReducer {
 	bui modulus;      // must be odd >= 3
 	bui reducer;      // power of 2
@@ -193,8 +193,9 @@ struct MontgomeryReducer {
 	// Convert a standard integer into Montgomery form
 	bui convertIn(bui x) const {
 		// TODO: shift overflow problem
-		shift_left_ip(x, reducerBits);
-		return mod(x, modulus);
+		return shift_left_mod(x, reducerBits, modulus);
+		// shift_left_ip(x, reducerBits);
+		// return mod(x, modulus);
 	}
 
 	// Convert a Montgomery form integer back to standard form
@@ -205,41 +206,44 @@ struct MontgomeryReducer {
 
 	// Multiply two Montgomery-form numbers
 	bui multiply(const bui& x, const bui& y) const {
-		assert(x < modulus && y < modulus);
+		assert(cmp(x, modulus) < 0 && cmp(y, modulus) < 0);
+		// printf("x      = %s\n", bui_to_dec(x).c_str());
+		// printf("y      = %s\n", bui_to_dec(y).c_str());
 		bul product = mul(x, y);
 		bui t_low = bul_low(product);
-		printf("1: p   = %s\n", bui_to_dec(t_low).c_str());
+		// printf("1: p   = %s\n", bul_to_dec(product).c_str());
 		t_low = bitwise_and(t_low, mask);
-        // printf("2.1: t1= %s\n", bui_to_dec(t_low).c_str());
+		// printf("2.1: t1= %s\n", bui_to_dec(t_low).c_str());
 		t_low = mul_low(t_low, factor);
-        // printf("2.2: t2= %s\n", bui_to_dec(t_low).c_str());
+		// printf("2.2: t2= %s\n", bui_to_dec(t_low).c_str());
 		t_low = bitwise_and(t_low, mask);
-		printf("2: temp= %s\n", bui_to_dec(t_low).c_str());
+		// printf("2: temp= %s\n", bui_to_dec(t_low).c_str());
 		auto tmp2 = mul(t_low, modulus);
-        printf("3.1: r1= %s\n", bui_to_dec(bul_low(tmp2)).c_str());
+		// printf("3.1: r1= %s\n", bul_to_dec(tmp2).c_str());
 		add_ip(product, tmp2);
-        printf("3.2: r2= %s\n", bui_to_dec(bul_low(product)).c_str());
+		// printf("3.2: r2= %s\n", bul_to_dec(product).c_str());
 		shift_right_ip(product, reducerBits);
-		printf("3: redu= %s\n", bui_to_dec(bul_low(product)).c_str());
+		// printf("3: redu= %s\n", bul_to_dec(product).c_str());
 		if (cmp(product, modulus) >= 0) {
 			sub_ip(product, bui_to_bul(modulus));
 		}
-		printf("4: resu= %s\n", bui_to_dec(bul_low(product)).c_str());
-		if (cmp(product, modulus) >= 0) {
-			sub_ip(product, bui_to_bul(modulus));
-			printf("NO1\n");
-		}
-		if (cmp(product, modulus) >= 0) {
-			sub_ip(product, bui_to_bul(modulus));
-			printf("NO2\n");
-		}
+		// printf("4: resu= %s\n", bul_to_dec(product).c_str());
+		// if (cmp(product, modulus) >= 0) {
+			// sub_ip(product, bui_to_bul(modulus));
+			// printf("NO1\n");
+		// }
+		// if (cmp(product, modulus) >= 0) {
+			// sub_ip(product, bui_to_bul(modulus));
+			// printf("NO2\n");
+		// }
 		return bul_low(product);
 	}
 
 	// Montgomery exponentiation: x^e (e standard, x and result in Montgomery form)
 	bui pow(bui x, const bui& e) const {
 		bui r = convertedOne;
-		u32 hb = highest_bit(e);
+		u32 hb = highest_bit(e) + 1;
+		// printf("Highest bit of e: {%d}\n", hb);
 		for (u32 i = 0; i < hb; ++i) {
 			if (get_bit(e, i)) {
 				r = multiply(r, x);
@@ -259,40 +263,61 @@ std::string bui_to_hex(const bui &a) {
 	return o.str();
 }
 
-
 int main() {
-	bui u = bui_from_dec("123456789");
-	bui v = bui_from_dec("6713");
-	bui m = bui_from_dec("896947");
-	MontgomeryReducer mr(m);
+	bui u = bui_from_dec("260428835329122752520818469321216072583938198616075453742527759001901820374664228839496959095353854544158481165265966459");
+	// bui u = bui_from_dec("260428835329122752520818469321216072583938198616075453742527");
+	bui v = bui_from_dec("1312312317639123213");
+	// bui m = bui_from_dec("108579795932485217312615519053");
+	bui m = bui_from_dec("823887783191267813656599693818502133610549771176609410328824491902309472167445766968176579098197424208002485918297593219");
+
+	// bui u = bui_from_dec("123456789");
+	// bui v = bui_from_dec("6713");
+	// bui m = bui_from_dec("896947");
+
+	// auto sm = shift_mod(u, 400, m);
+	// printf("sm = %s\n", bui_to_dec(sm).c_str());
+	// return 0;
+
 	printf("u = %s\n", bui_to_dec(u).c_str());
 	printf("u = %s\n", bui_to_hex(u).c_str());
 	printf("v = %s\n", bui_to_dec(v).c_str());
 	printf("v = %s\n", bui_to_hex(v).c_str());
 	printf("m = %s\n", bui_to_dec(m).c_str());
-	// mr.reciprocal = bui_from_dec("845822");
+
+
+	auto start_mont = std::chrono::high_resolution_clock::now();
+	MontgomeryReducer mr(m);
+	// printf("reducerBits= %d\n", mr.reducerBits);
+	// printf("reciprocal = %s\n", bui_to_dec(mr.reciprocal).c_str());
+	// printf("mask       = %s\n", bui_to_dec(mr.mask).c_str());
+	// printf("reducer    = %s\n", bui_to_dec(mr.reducer).c_str());
+	// printf("factor     = %s\n", bui_to_dec(mr.factor).c_str());
+	// printf("c1         = %s\n", bui_to_dec(mr.convertedOne).c_str());
+
 	auto cu = mr.convertIn(u);
-	auto ou = mr.convertOut(cu);
-	printf("cu= %s\n", bui_to_dec(cu).c_str());
-	printf("ou= %s\n", bui_to_dec(ou).c_str());
-	printf("o1= %s\n", bui_to_dec(mr.convertedOne).c_str());
-	printf("reducerbits=%u\n", mr.reducerBits);
-	printf("Converted1  = %s\n", bui_to_dec(mr.convertedOne).c_str());
-	printf("R           = %s\n", bui_to_dec(mr.reducer).c_str());
-	printf("mask        = %s\n", bui_to_dec(mr.mask).c_str());
-	printf("reciprocal  = %s\n", bui_to_dec(mr.reciprocal).c_str());
-	printf("R           = %s\n", bui_to_hex(mr.reducer).c_str());
-	printf("reciprocal  = %s\n", bui_to_hex(mr.reciprocal).c_str());
-	printf("factor      = %s\n", bui_to_hex(mr.factor).c_str());
-	printf("mask        = %s\n", bui_to_hex(mr.mask).c_str());
+	// auto ou = mr.convertOut(cu);
+	// printf("cu= %s\n", bui_to_dec(cu).c_str());
+	// printf("ou= %s\n", bui_to_dec(ou).c_str());
+	// printf("o1= %s\n", bui_to_dec(mr.convertedOne).c_str());
+	// ---------- Time Montgomery exponentiation ----------
 	auto c = mr.pow(cu, v);
-	printf("c = %s\n", bui_to_dec(c).c_str());
 	auto cc = mr.convertOut(c);
-	printf("cc= %s\n", bui_to_dec(cc).c_str());
-	// auto c1 = u;
-	// mul_mod_ip(c1, v, m);
+	auto end_mont = std::chrono::high_resolution_clock::now();
+	auto duration_mont = std::chrono::duration_cast<std::chrono::nanoseconds>(end_mont - start_mont).count();
+
+	printf("Montgomery pow: c    = %s\n", bui_to_dec(c).c_str());
+	printf("Converted out: cc    = %s\n", bui_to_dec(cc).c_str());
+
+	// ---------- Time standard modular exponentiation ----------
+	auto start_std = std::chrono::high_resolution_clock::now();
 	auto c1 = pow_mod(u, v, m);
-	printf("c1= %s\n", bui_to_dec(c1).c_str());
+	auto end_std = std::chrono::high_resolution_clock::now();
+	auto duration_std = std::chrono::duration_cast<std::chrono::nanoseconds>(end_std - start_std).count();
+
+	printf("Standard pow_mod: c1 = %s\n", bui_to_dec(c1).c_str());
+	printf("--------------------------------\n");
+	printf("Montgomery pow time  : %lld ns\n", duration_mont);
+	printf("Standard pow_mod time: %lld ns\n", duration_std);
 
 	return 0;
 }
