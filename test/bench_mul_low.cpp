@@ -4,7 +4,7 @@
 #include <random>
 
 #define BI_N 16
-#include "bigint.h"
+#include "../bigint.h"
 
 static void bui_randomize(bui &x) {
     std::random_device rd; std::mt19937 gen(rd());
