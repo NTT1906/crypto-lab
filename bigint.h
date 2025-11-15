@@ -59,8 +59,8 @@ void sub_ip(bui& a, const bui& b);
 bui mod_native(bui x, const bui& m);
 bui mod_native(bul x, const bui& m);
 void mul_mod_ip(bui &a, bui b, const bui &m);
-bui bui_pow2(u32 bits);
-bul bul_pow2(u32 bits);
+bui bui_pow2(u32 k);
+bul bul_pow2(u32 k);
 void dbl_ip(bui &x);
 u32 u32_divmod_bul(const bul &a, u32 d, bul &q);
 
@@ -166,6 +166,15 @@ inline u32 highest_limb(const bui &x) {
 	return 0;
 }
 
+// find highest (MSB) limb
+inline u32 highest_limb(const bul &x) {
+	for (size_t i = 0; i < BI_N * 2; ++i) {
+		if (x[i] > 0)
+			return (BI_N * 2 - 1) - i;
+	}
+	return 0;
+}
+
 inline void shift_limb_left(bul &x, u32 l) {
 	if (l == 0) return;
 	if (l >= BI_N * 2) {
@@ -176,15 +185,15 @@ inline void shift_limb_left(bul &x, u32 l) {
 	std::fill(x.end() - l, x.end(), 0);
 }
 
-
-ALWAYS_INLINE void shift_left_ip_imp(u32 *x, u32 n, u32 amnt) {
-	if (amnt == 0) return;
-	const u32 limbs = amnt / SBU32;
+// shift left in-place (x *= 2^k)
+ALWAYS_INLINE void shift_left_ip_imp(u32 *x, u32 n, u32 k) {
+	if (k == 0) return;
+	const u32 limbs = k / SBU32;
 	if (limbs >= n) {
 		memset(x, 0, n * SU32);
 		return;
 	}
-	const u32 bits = amnt % SBU32;
+	const u32 bits = k % SBU32;
 	// limb-only move (toward MSW)
 	if (limbs) {
 		memmove(x, x + limbs, (n - limbs) * SU32);
@@ -201,19 +210,20 @@ ALWAYS_INLINE void shift_left_ip_imp(u32 *x, u32 n, u32 amnt) {
 	}
 }
 
-inline void shift_left_ip(bui &x, u32 amnt) {
-	shift_left_ip_imp(x.data(), BI_N, amnt);
+inline void shift_left_ip(bui &x, u32 k) {
+	shift_left_ip_imp(x.data(), BI_N, k);
 }
 
-inline void shift_left_ip(bul &x, u32 amnt) {
-	shift_left_ip_imp(x.data(), BI_N * 2, amnt);
+inline void shift_left_ip(bul &x, u32 k) {
+	shift_left_ip_imp(x.data(), BI_N * 2, k);
 }
 
-bui shift_left(bui x, u32 amnt) {
-	if (amnt == 0) return x;
-	u32 limbs = amnt / SBU32;
+// shift left (r = x * 2^k)
+bui shift_left(bui x, u32 k) {
+	if (k == 0) return x;
+	u32 limbs = k / SBU32;
 	if (limbs >= BI_N) return {};
-	u32 bits = amnt % 32;
+	u32 bits = k % 32;
 	bui r{};
 	// limb-only move (toward MSW)
 	std::copy(x.begin() + limbs, x.end(), r.begin());
@@ -229,20 +239,22 @@ bui shift_left(bui x, u32 amnt) {
 	return r;
 }
 
+// shift left mode (r = x * 2^k mod m)
 bui shift_left_mod(bui x, int shift, const bui& m) {
 	bui p2 = bui_pow2(shift);
 	mul_mod_ip(x, p2, m);
 	return x;
 }
 
-ALWAYS_INLINE void shift_right_ip_imp(u32 *x, const u32 n, u32 amnt) {
-	if (amnt == 0) return;
-	const u32 limbs = amnt / SBU32;
+// shift right in-place (x /= 2^k)
+ALWAYS_INLINE void shift_right_ip_imp(u32 *x, const u32 n, u32 k) {
+	if (k == 0) return;
+	const u32 limbs = k / SBU32;
 	if (limbs >= n) {
 		memset(x, 0, n * SU32);
 		return;
 	}
-	const u32 bits = amnt % SBU32;
+	const u32 bits = k % SBU32;
 	// limb-only move (toward MSW)
 	if (limbs) {
 		memmove(x + limbs, x, (n - limbs) * SU32);
@@ -260,44 +272,52 @@ ALWAYS_INLINE void shift_right_ip_imp(u32 *x, const u32 n, u32 amnt) {
 	}
 }
 
-inline void shift_right_ip(bui& x, const u32 amnt) {
-	shift_right_ip_imp(x.data(), BI_N, amnt);
+// Big int: shift right in-place (x /= 2^k)
+inline void shift_right_ip(bui& x, const u32 k) {
+	shift_right_ip_imp(x.data(), BI_N, k);
 }
 
-inline void shift_right_ip(bul& x, u32 amnt) {
-	shift_right_ip_imp(x.data(), BI_N * 2, amnt);
+// Big long: shift right in-place (x /= 2^k)
+inline void shift_right_ip(bul& x, u32 k) {
+	shift_right_ip_imp(x.data(), BI_N * 2, k);
 }
 
+// Checking if input bigint is zero
 inline bool bu_is0(const u32 *x, u32 n) {
 	while (n-- > 0)
 		if (x[n] != 0) return false;
 	return true;
 }
 
+// Checking if input bui is zero
 inline bool bui_is0(const bui& x) {
 	for (const u32 val : x)
 		if (val != 0) return false;
 	return true;
 }
 
+// Return low-part of bul as bui
 inline bui bul_low(const bul& x) {
 	bui r{};
 	std::copy(x.begin() + BI_N, x.end(), r.begin());
 	return r;
 }
 
+// Return high-part of bul as bui
 inline bui bul_high(const bul& x) {
 	bui r{};
 	std::copy_n(x.begin(), BI_N, r.begin());
 	return r;
 }
 
+// Return new bul with low-part being input bui x
 inline bul bui_to_bul(const bui& x) {
 	bul r{};
 	std::copy(x.begin(), x.end(), r.begin() + BI_N);
 	return r;
 }
 
+// Compare between two bui
 inline int cmp(const bui &a, const bui &b) {
 	for (u32 i = 0; i < BI_N; ++i) {
 		if (a[i] != b[i])
@@ -306,6 +326,7 @@ inline int cmp(const bui &a, const bui &b) {
 	return 0;
 }
 
+// Compare between two bul
 inline int cmp(const bul &a, const bul &b) {
 	for (u32 i = 0; i < BI_N * 2; ++i) {
 		if (a[i] != b[i])
@@ -314,6 +335,7 @@ inline int cmp(const bul &a, const bul &b) {
 	return 0;
 }
 
+// Compare between bul and bui
 inline int cmp(const bul& a, const bui& b) {
 	for (int i = 0; i < BI_N; ++i) {
 		if (a[i] != 0) return 1;
@@ -558,8 +580,7 @@ inline void divmod(const bul& a, const bui& b, bui &q, bul &r) {
 }
 
 inline void u32divmod(const bui& a, u32 b, bui& q, u32& r) {
-	q = {};
-	r = 0;
+	q = {}, r = 0;
 	for (int i = 0; i < BI_N; ++i) {
 		u64 dividend = (u64)r << 32 | a[i];
 		q[i] = (u32)(dividend / b);
@@ -567,20 +588,24 @@ inline void u32divmod(const bui& a, u32 b, bui& q, u32& r) {
 	}
 }
 
-// TODO: assert size
-inline bui bui_pow2(u32 bits) {
+// Big int: return 2^k
+inline bui bui_pow2(const u32 k) {
+	assert(k < BI_BIT);
 	bui r{};
-	set_bit_ip(r, bits, 1);
+	set_bit_ip(r, k, 1);
 	return r;
 }
 
-inline bul bul_pow2(u32 bits) {
+// Big long: return 2^k
+inline bul bul_pow2(const u32 k) {
+	assert(k < BI_BIT * 2);
 	bul r{};
-	set_bit_ip(r, bits, 1);
+	set_bit_ip(r, k, 1);
 	return r;
 }
 
-bui pow_mod(bui x, const bui& e, const bui &m) {
+// Return pow_mod (x^e % m)
+inline bui pow_mod(bui x, const bui& e, const bui &m) {
 	bui r = bui1();
 	u32 hb = highest_bit(e);
 	for (u32 i = 0; i < hb; ++i) {
@@ -590,15 +615,6 @@ bui pow_mod(bui x, const bui& e, const bui &m) {
 		mul_mod_ip(x, x, m);
 	}
 	return r;
-}
-
-// find highest (MSB) limb
-inline u32 highest_limb(const bul &x) {
-	for (size_t i = 0; i < BI_N * 2; ++i) {
-		if (x[i] > 0)
-			return (BI_N * 2 - 1) - i;
-	}
-	return 0;
 }
 
 // Knuth Algorithm D
@@ -759,10 +775,6 @@ inline u32 highest_limb(const bul &x) {
 //     rem = bul_low(r); // copy low half of 'r' into 'rem'
 // }
 
-inline bool is_space_c(char c) {
-	return c == ' ' || c == '\t';
-}
-
 ALWAYS_INLINE u32 dbl_ip_imp(bui &x) {
 	u32 c = 0, i = BI_N;
 	while (i-- > 0) {
@@ -873,11 +885,12 @@ u32 u32_divmod_bul(const bul &a, u32 d, bul &q) {
 	return (u32)rem;
 }
 
+// Big int: return bui from dec string
 bui bui_from_dec(const std::string& s) {
 	assert(!s.empty() && "bui_from_dec: empty string");
 	size_t i = 0;
 	// skip leading spaces and optional '+'
-	while (is_space_c(s[i])) ++i;
+	while (isspace(s[i])) ++i;
 	if (s[i] == '+') ++i;
 	assert(s[i] != '-' && "bui_from_dec: negative not supported");
 	// skip leading zeros, underscores, spaces
@@ -889,7 +902,7 @@ bui bui_from_dec(const std::string& s) {
 	bui tmp{};
 	for (; i < s.size(); ++i) {
 		char c = s[i];
-		if (c == '_' || is_space_c(c)) continue;
+		if (c == '_' || isspace(c)) continue;
 		if (c < '0' || c > '9') break;
 		any_digit = true;
 		mul_ip(out, n10);
@@ -900,11 +913,12 @@ bui bui_from_dec(const std::string& s) {
 	return out;
 }
 
+// Big int: return bui from hex string
 bui bui_from_hex(const std::string& s) {
 	assert(!s.empty() && "bui_from_hex: empty string");
 	size_t i = 0;
 	// skip leading spaces
-	while (i < s.size() && is_space_c(s[i])) ++i;
+	while (i < s.size() && isspace(s[i])) ++i;
 	// optional "0x" or "0X" prefix
 	if (i + 1 < s.size() && s[i] == '0' && (s[i+1] == 'x' || s[i+1] == 'X')) i += 2;
 
@@ -915,7 +929,7 @@ bui bui_from_hex(const std::string& s) {
 
 	for (; i < s.size(); ++i) {
 		char c = s[i];
-		if (c == '_' || is_space_c(c)) continue;
+		if (c == '_' || isspace(c)) continue;
 		int val = hex_val(c);
 		if (val < 0) break;
 		any_digit = true;
