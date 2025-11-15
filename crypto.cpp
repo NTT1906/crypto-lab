@@ -7,7 +7,7 @@
 
 using namespace std;
 
-string normalize_hex_le_to_be(string s) {
+string normalize_hex_le_to_be(const string& s) {
     string hex;
     for (char c : s) {
         if (!isspace((unsigned char)c)) hex.push_back(c);

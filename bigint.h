@@ -10,6 +10,10 @@
 #include <string>
 #include <sstream>
 #include <random>
+#include <cctype>
+#include <cstring>
+#include <iostream>
+#include <vector>
 
 typedef uint32_t u32;
 typedef uint64_t u64;
@@ -17,14 +21,11 @@ typedef uint64_t u64;
 #define SU32 sizeof(u32)
 #define SBU32 32
 
-#ifdef BI_BIT
-#define BI_N (BI_BIT / SBU32)
-#endif
-#ifndef BI_N
-#define BI_N 16 // (512 / SBU32)
-#endif
 #ifndef BI_BIT
 #define BI_BIT 512
+#endif
+#ifndef BI_N
+#define BI_N (BI_BIT / 32)
 #endif
 
 #if defined(_MSC_VER)
@@ -61,6 +62,7 @@ void mul_mod_ip(bui &a, bui b, const bui &m);
 bui bui_pow2(u32 bits);
 bul bul_pow2(u32 bits);
 void dbl_ip(bui &x);
+u32 u32_divmod_bul(const bul &a, u32 d, bul &q);
 
 constexpr bui bui0() { return {}; }
 
@@ -267,7 +269,6 @@ inline void shift_right_ip(bul& x, u32 amnt) {
 }
 
 inline bool bu_is0(const u32 *x, u32 n) {
-	assert(n <= BI_N);
 	while (n-- > 0)
 		if (x[n] != 0) return false;
 	return true;
@@ -318,10 +319,8 @@ inline int cmp(const bul& a, const bui& b) {
 		if (a[i] != 0) return 1;
 	}
 	for (int i = 0; i < BI_N; ++i) {
-		u32 a_low = a[BI_N + i];
-		u32 b_val = b[i];
-		if (a[i] != b[i])
-			return a_low > b_val ? 1 : -1;
+		u32 al = a[BI_N + i], bl = b[i];
+		if (al != bl) return al > bl ? 1 : -1;
 	}
 	return 0;
 }
@@ -794,25 +793,40 @@ inline int hex_val(unsigned char c) {
 }
 
 std::string bui_to_dec(const bui& x) {
-	std::string result;
 	if (bui_is0(x)) return "0";
-	u32 rems[(BI_N * SBU32 + 26) / 27];
-	size_t count = 0;
-	bui n = x;
-	bui q;
+	std::vector<u32> parts;
+	bui n = x, q{};
+	u32 r = 0;
 	while (!bui_is0(n)) {
-		u32 r;
-		u32divmod(n, 100000000U, q, r);
-		rems[count++] = r;
+		constexpr u32 BASE = 1000000000u;
+		u32divmod(n, BASE, q, r);
+		parts.push_back(r);
 		n = q;
 	}
-	// first chunk is printed without leading zeros
-	result += std::to_string(rems[count - 1]);
-	// remaining chunks, padded with leading zeros
-	for (size_t i = count - 2; i < count; --i) {
-		result += std::string(8 - std::to_string(rems[i]).size(), '0') + std::to_string(rems[i]);
+	std::ostringstream oss;
+	oss << parts.back();
+	for (int i = (int)parts.size() - 2; i >= 0; --i)
+		oss << std::setw(9) << std::setfill('0') << parts[i];
+	return oss.str();
+}
+
+// Convert bul to decimal string using base 1e9 chunks.
+std::string bul_to_dec(const bul& x) {
+	if (bu_is0(x.data(), BI_N * 2)) return "0";
+	std::vector<u32> parts;
+	bul n = x, q{};
+	while (!bu_is0(n.data(), BI_N * 2)) {
+		constexpr u32 BASE = 1000000000u;
+		u32 r = u32_divmod_bul(n, BASE, q);
+		parts.push_back(r);
+		n = q;
 	}
-	return result;
+	std::ostringstream oss;
+	oss << parts.back();
+	for (int i = (int)parts.size() - 2; i >= 0; --i) {
+		oss << std::setw(9) << std::setfill('0') << parts[i];
+	}
+	return oss.str();
 }
 
 std::string bui_to_hex(const bui &a, bool split) {
@@ -825,7 +839,7 @@ std::string bui_to_hex(const bui &a, bool split) {
 	return o.str();
 }
 
-std::string normalize_hex_le_to_be(std::string s) {
+std::string normalize_hex_le_to_be(const std::string& s) {
 	std::string hex;
 	for (char c : s) {
 		if (!isspace((unsigned char)c)) hex.push_back(c);
@@ -845,7 +859,7 @@ bui read_bui_le() {
 // Divide a double-width big-int (bul, MSW at index 0) by a 32-bit divisor.
 // q := a / d (quotient), returns remainder r = a % d.
 // Requires: d != 0
-static inline u32 u32_divmod_bul(const bul &a, u32 d, bul &q) {
+u32 u32_divmod_bul(const bul &a, u32 d, bul &q) {
 	u64 rem = 0;
 	for (u32 i = 0; i < BI_N * 2; ++i) q[i] = 0;
 
@@ -857,39 +871,6 @@ static inline u32 u32_divmod_bul(const bul &a, u32 d, bul &q) {
 		rem = rem - (u64)qi * (u64)d; // rem = rem % d
 	}
 	return (u32)rem;
-}
-
-// test for zero on raw bul data pointer (helper you had earlier)
-static inline bool bul_is0_ptr(const u32 *p) {
-	for (u32 i = 0; i < BI_N * 2; ++i) if (p[i] != 0) return false;
-	return true;
-}
-
-#include <vector>
-// Convert bul to decimal string using base 1e9 chunks.
-std::string bul_to_dec(const bul& x) {
-	if (bul_is0_ptr(x.data())) return "0";
-
-	// use base = 1e9 so each remainder fits in 32-bit
-	constexpr u32 BASE = 1000000000u;
-
-	std::vector<u32> parts;            // least-significant chunk first
-	bul n = x;                         // mutable copy
-	bul q;                             // quotient placeholder
-
-	while (!bul_is0_ptr(n.data())) {
-		u32 r = u32_divmod_bul(n, BASE, q);
-		parts.push_back(r);
-		n = q;
-	}
-
-	// build decimal string: highest part without padding, others padded to 9 digits
-	std::ostringstream oss;
-	oss << parts.back(); // most-significant chunk
-	for (int i = (int)parts.size() - 2; i >= 0; --i) {
-		oss << std::setw(9) << std::setfill('0') << parts[i];
-	}
-	return oss.str();
 }
 
 bui bui_from_dec(const std::string& s) {
@@ -1131,6 +1112,18 @@ inline bul bul_binary_flood1(u32 k) {
 	return r;
 }
 
+static inline void sub_mod_ip(bui& a, const bui& b, const bui& m) {
+	if (cmp(a, b) >= 0) {
+		sub_ip(a, b);
+	} else {
+		bui t = m;
+		bui bb = b;
+		sub_ip(bb, a); // bb = b - a
+		sub_ip(t, bb); // t  = m - (b - a)
+		a = t;
+	}
+}
+
 // Extended Euclidean algorithm
 bool mod_inverse(bui a, const bui &m, bui &inv_out) {
 	if (bui_is0(m) || bui_is0(a)) return false;
@@ -1138,24 +1131,13 @@ bool mod_inverse(bui a, const bui &m, bui &inv_out) {
 	bui r0 = m, r1 = a;
 	bui t0{}, t1 = bui1();
 	while (!bui_is0(r1)) {
-		// q = r0 / r1, rem = r0 % r1
-		bui q, rem;
-		divmod(r0, r1, q, rem);
-		r0 = r1, r1 = rem;
-		bul prod{};
-		mul_ref(q, t1, prod);  // prod = q * t1
-		bui qtm_rem = mod_native(prod, m); // qtm_rem = (prod) % m
-		if (cmp(t0, qtm_rem) >= 0) {
-			sub_ip(t0, qtm_rem);
-		} else {
-			t0 = m;
-			sub_ip(qtm_rem, t0);
-			sub_ip(t0, qtm_rem);
-		}
+		bui q, rem; divmod(r0, r1, q, rem);
+		r0 = r1; r1 = rem;
+		bul prod{}; mul_ref(q, t1, prod);
+		bui qtm = mod_native(prod, m);
+		sub_mod_ip(t0, qtm, m);
 		std::swap(t0, t1);
 	}
-
-	// r0 = gcd(a, m) so if gcd != 1 -> no inverse
 	if (cmp(r0, bui1()) != 0) return false;
 	inv_out = t0;
 	return true;
@@ -1204,7 +1186,7 @@ bool mod_inverse_old(bui a, const bui &m, bui &inv_out) {
 	return true;
 }
 
-// Extended Euclidean algorithm, a is modded by m
+// Extended Euclidean algorithm, input a is modded by m
 bool mod_inverse_modded(const bui &a, const bui &m, bui &inv_out) {
 	if (bui_is0(m) || bui_is0(a)) return false;
 	bui r0 = m, r1 = a;

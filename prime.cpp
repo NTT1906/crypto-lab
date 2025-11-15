@@ -6,6 +6,14 @@
 constexpr u32 POLY_R = 14;
 struct Poly : std::array<bui, POLY_R>{};
 
+// void printBuiA(const bui *poly, int n) {
+// 	printf("{");
+// 	for (int i = 0; i < n; ++i) {
+// 		printf("%s, ", bui_to_dec(poly[i]).c_str());
+// 	}
+// 	printf("}\n");
+// }
+
 // static void poly_mul_mod_ip(Poly &A, const Poly &B, const bui& m) {
 // 	bool a_skips[POLY_R] = {false};
 // 	bool b_skips[POLY_R] = {false};
@@ -86,7 +94,7 @@ static void poly_mul_mod_mont_ip(Poly &A, const Poly &B, const MontgomeryReducer
 	A = C;
 }
 
-static void poly_sqr_mod_mont_ip(Poly &A, MontgomeryReducer &mr) {
+static void poly_sqr_mod_mont_ip(Poly &A, const MontgomeryReducer &mr) {
 	bool a_skips[POLY_R] = {false};
 	for (int i = 0; i < POLY_R; ++i) a_skips[i] = bui_is0(A[i]);
 	Poly C{};
@@ -100,8 +108,6 @@ static void poly_sqr_mod_mont_ip(Poly &A, MontgomeryReducer &mr) {
 	}
 	A = C;
 }
-
-void printBuiA(bui *buis, int n);
 
 Poly poly_pow_1x_mont(const bui &n) {
 	MontgomeryReducer mr(n);
@@ -120,15 +126,6 @@ Poly poly_pow_1x_mont(const bui &n) {
 		if (!bui_is0(res[i])) res[i] = mr.convertOut(res[i]);
 	}
 	return res;
-}
-
-
-void printBuiA(bui *buis, int n) {
-	printf("{");
-	for (int i = 0; i < n; ++i) {
-		printf("%s, ", bui_to_dec(buis[i]).c_str());
-	}
-	printf("}\n");
 }
 
 // TODO: gate-away small number?
