@@ -49,6 +49,7 @@ struct MontgomeryReducer;
 std::string bui_to_dec(const bui& x);
 std::string bui_to_hex(const bui& a, bool split = false);
 bui bui_from_dec(const std::string& s);
+bui bui_from_hex(const std::string& s);
 
 int cmp(const bui &a, const bui &b);
 void add_ip(bui& a, const bui& b);
@@ -822,6 +823,23 @@ std::string bui_to_hex(const bui &a, bool split) {
 		if (split) o << ' ';
 	}
 	return o.str();
+}
+
+std::string normalize_hex_le_to_be(std::string s) {
+	std::string hex;
+	for (char c : s) {
+		if (!isspace((unsigned char)c)) hex.push_back(c);
+	}
+	if (hex.empty()) return std::string("0");
+	reverse(hex.begin(), hex.end());
+	return hex;
+}
+
+bui read_bui_le() {
+	std::string line;
+	getline(std::cin, line);
+	std::string be_hex = normalize_hex_le_to_be(line);
+	return bui_from_hex(be_hex);
 }
 
 // Divide a double-width big-int (bul, MSW at index 0) by a 32-bit divisor.

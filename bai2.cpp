@@ -3,26 +3,11 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
-#include "BigInt.h"
+
+#define BI_BIT 512
+#include "bigint.h"
 
 using namespace std;
-
-string normalize_hex_le_to_be(string s) {
-    string hex;
-    for (char c : s) {
-        if (!isspace((unsigned char)c)) hex.push_back(c);
-    }
-    if (hex.empty()) return string("0");
-    reverse(hex.begin(), hex.end());
-    return hex;
-}
-
-bui read_bui_le() {
-    string line;
-    getline(cin, line);
-    string be_hex = normalize_hex_le_to_be(line);
-    return bui_from_hex(be_hex);
-}
 
 string bui_to_hex_le(const bui& x) {
     string full = bui_to_hex(x, false);

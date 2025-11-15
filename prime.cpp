@@ -148,23 +148,6 @@ static bool aks_like_prime(const bui &n) {
 	return true;
 }
 
-std::string normalize_hex_le_to_be(std::string s) {
-	std::string hex;
-	for (char c : s) {
-		if (!isspace((unsigned char)c)) hex.push_back(c);
-	}
-	if (hex.empty()) return std::string("0");
-	reverse(hex.begin(), hex.end());
-	return hex;
-}
-
-bui read_bui_le() {
-	std::string line;
-	getline(std::cin, line);
-	std::string be_hex = normalize_hex_le_to_be(line);
-	return bui_from_hex(be_hex);
-}
-
 // static bool has_small_factor(const bui &n) {
 // 	static const int SMALL_PRIMES[] = {
 // 		2, 3, 5, 7,11,13,17,19,23,29,31,37,41,
