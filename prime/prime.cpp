@@ -80,13 +80,11 @@ static u32 cigint_mod_small(const Cigint &n, u32 m) {
 
 // check poly == 1 + x^(n mod R)
 static bool poly_is_xn_plus_1(const Poly &P, const Cigint &n, const Cigint &m) {
+	if (cigint_cmp(P.c[0], z1()) != 0) return false;
 	u32 k = cigint_mod_small(n, R);   // exact n % R
+	if (cigint_cmp(P.c[k], z1()) != 0) return false;
 	for (int i = 0; i < R; ++i) {
-		if (i == 0 || i == (int)k) {
-			if (cigint_cmp(P.c[i], z1()) != 0) return false;
-		} else {
-			if (!cigint_is0(P.c[i])) return false;
-		}
+		if (!cigint_is0(P.c[i])) return false;
 	}
 	return true;
 }
@@ -140,7 +138,8 @@ int main() {
 	// your prime
 	// Cigint n = cigint_from_dec("7669373798138436444425917457853162445620122597663674808454541043947311884377"); //up to 76digit
 	// Cigint n = cigint_from_dec("771458402252315418489174122874340496560720991135040845033515625723932549727443357205751720461233037696609749135759573352834404574203828395431821751181407"); //up to 154 digit
-	Cigint n = cigint_from_dec("12598680682438752944055149498662865476737841742262510750565369004945449194176119763492007280023309651826310840991041734855800903377926420446403888376677867"); //up to 154 digit
+	// Cigint n = cigint_from_dec("12598680682438752944055149498662865476737841742262510750565369004945449194176119763492007280023309651826310840991041734855800903377926420446403888376677867"); //up to 154 digit
+	Cigint n = cigint_from_dec("5"); //up to 154 digit
 	printf("n = ");
 	cigint_print10(n);
 	bool ok = aks_like_cigint(n);

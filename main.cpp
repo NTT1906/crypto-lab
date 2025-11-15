@@ -1,9 +1,4 @@
-// main.cpp
 #include <iostream>
-#include <iomanip>
-#include <string>
-
-// choose bigint size (512 bits in your header default)
 #define BI_BIT 512
 #include "bigint.h"
 
@@ -40,6 +35,10 @@ int main() {
     mul_ref(A, B, prod);                // full 2N product
     cout << "A * B (low half as dec): " << bul_to_dec(prod) << "\n";
     cout << "A * B (low half only): " << bui_to_dec(bul_low(prod)) << "\n\n";
+    // A = bui_from_u32(2);
+    // B = bui_from_u32(3);
+    bui prod_low = mul_low_fast(A, B);
+    cout << "A * B (narrowing): " << bui_to_dec(prod_low) << "\n";
 
     // --- division/modulo ---
     bui q, r;
@@ -89,6 +88,11 @@ int main() {
 
     bui sh_mod = shift_left_mod(A_mod, 100, m); // (A * 2^100) % m
     cout << "A * 2^100 mod m = " << bui_to_dec(sh_mod) << "\n";
+
+    bui f1 = bui_binary_flood1(33);
+    cout << "f1 = " << bui_to_dec(f1) << "\n";
+    bul f2 = bul_binary_flood1(721);
+    cout << "f2 = " << bul_to_dec(f2) << "\n";
 
     // --- convert back to hex/dec strings for display (already used above) ---
     cout << "\nDone.\n";

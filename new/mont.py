@@ -8,7 +8,6 @@
 
 import math, random, unittest
 
-
 class MontgomeryReducerTest(unittest.TestCase):
 
     def test_basic(self) -> None:
@@ -52,14 +51,19 @@ class MontgomeryReducer:
         self.modulus = mod
 
         # Reducer
-        self.reducerbits = (mod.bit_length() // 8 + 1) * 8  # This is a multiple of 8
+        self.reducerbits = (mod.bit_length() // 32 + 1) * 32  # This is a multiple of 8
+        if self.reducerbits > 512:
+            self.reducerbits = 512
         self.reducer = 1 << self.reducerbits  # This is a power of 256
         self.mask = self.reducer - 1
         assert (self.reducer > mod) and (math.gcd(self.reducer, mod) == 1)
 
         # Other computed numbers
         self.reciprocal = pow(self.reducer, -1, mod)
+        print(self.reciprocal)
         self.factor = (self.reducer * self.reciprocal - 1) // mod
+        factor_fake = self.mask // mod
+        print(f"Fake factor: {factor_fake}")
         self.convertedone = self.reducer % mod
 
 
@@ -117,22 +121,29 @@ class MontgomeryReducer:
         return z
 
 if __name__ == "__main__":
-    u = 260428835329122752520818469321216072583938198616075453742527759001901820374664228839496959095353854544158481165265966459
-    v = 1312312317639123213
-    mr = MontgomeryReducer(823887783191267813656599693818502133610549771176609410328824491902309472167445766968176579098197424208002485918297593219)
+    # (123456789012345678901234567890 ** 65537) % 1000000000000000000000000000037
+# 73399183678185556697836825553
+    u = 123456789012345678901234567890
+    v = 65537
+    m = 1000000000000000000000000000037
+    # u = 260428835329122752520818469321216072583938198616075453742527759001901820374664228839496959095353854544158481165265966459
+    # v = 1312312317639123213
+    mr = MontgomeryReducer(m)
+    # mr = MontgomeryReducer(8274904334290417405341624571932224150456224549917673444239237760272785701939526927698156030175801211624849856326839256526253153336777911614668501375751381)
+    # mr = MontgomeryReducer(6274904334290417405341624571932224150456224549917673444239237760272785701939526927698156030175801211624849856326839256526253153336777911614668501375751381)
     # u = 260428835329122752520818469321216072583938198616075453742527
     # v = 1312312317639123213
     # mr = MontgomeryReducer(108579795932485217312615519053)
-    # print(f"reducerBits= {mr.reducerbits}")
-    # print(f"reciprocal = {mr.reciprocal}")
-    # print(f"mask       = {mr.mask}")
-    # print(f"reducer    = {mr.reducer}")
-    # print(f"factor     = {mr.factor}")
-    # print(f"c1         = {mr.convertedone}")
+    print(f"reducerBits= {mr.reducerbits}")
+    print(f"reciprocal = {mr.reciprocal}")
+    print(f"mask       = {mr.mask}")
+    print(f"reducer    = {mr.reducer}")
+    print(f"factor     = {mr.factor}")
+    print(f"c1         = {mr.convertedone}")
 
     cu = mr.convert_in(u)
     # print(f"cu={cu}")
     r = mr.pow(cu, v)
     cr = mr.convert_out(r)
-    # print(f"r ={r}\ncr={cr}")
+    print(f"r ={r}\ncr={cr}")
     # unittest.main()

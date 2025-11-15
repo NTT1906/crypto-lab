@@ -1,10 +1,12 @@
 #ifndef _BIGINT_H_
 #define _BIGINT_H_
 #include <algorithm>
+#include <iomanip>
 #include <array>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <future>
 #include <string>
 
 typedef uint32_t u32;
@@ -18,6 +20,8 @@ typedef uint64_t u64;
 #endif
 #ifndef BI_N
 #define BI_N 16 // (512 / SBU32)
+#endif
+#ifndef BI_BIT
 #define BI_BIT 512
 #endif
 
@@ -47,6 +51,7 @@ bui mod_native(bui x, const bui& m);
 bui mod_native(bul x, const bui& m);
 void mul_mod_ip(bui &a, bui b, const bui &m);
 bui bui_pow2(u32 bits);
+bul bul_pow2(u32 bits);
 void dbl_ip(bui &x);
 
 constexpr bui bui0() { return {}; }
@@ -96,6 +101,14 @@ inline void set_bit_ip(bui &a, u32 pos, u32 val) {
 	a[k] = set_bit(a[k], pos % 32, val);
 }
 
+inline void set_bit_ip(bul &a, u32 pos, u32 val) {
+	if (pos >= BI_N * 2 * SBU32) {
+		assert(pos < BI_N * 2 * SBU32);
+	}
+	u32 k = BI_N * 2 - 1 - pos / SBU32;
+	a[k] = set_bit(a[k], pos % 32, val);
+}
+
 inline bui set_bit(bui a, u32 pos, u32 val) {
 	set_bit_ip(a, pos, val);
 	return a;
@@ -117,7 +130,7 @@ inline u32 highest_bit(u32 x) {
 
 inline u32 highest_bit(const bui &x) {
 	for (size_t i = 0; i < BI_N; ++i) {
-		if (x[i] > 0)
+		if (x[i] != 0)
 			return highest_bit(x[i]) + (BI_N - i - 1) * SBU32;
 	}
 	return 0; // all limbs zero
@@ -125,7 +138,7 @@ inline u32 highest_bit(const bui &x) {
 
 inline u32 highest_bit(const bul &x) {
 	for (size_t i = 0; i < BI_N * 2; ++i) {
-		if (x[i] > 0)
+		if (x[i] != 0)
 			return highest_bit(x[i]) + (BI_N * 2 - i - 1) * SBU32;
 	}
 	return 0; // all limbs zero
@@ -381,6 +394,7 @@ inline bui sub(bui a, const bui& b) {
 ALWAYS_INLINE void mul_imp(const u32* a, const u32* b, u32* r, const u32 n) {
 	std::fill_n(r, 2 * n, 0);
 	for (u32 i = n; i-- > 0;) {
+		if (!a[i]) continue;
 		u32 c = 0;
 		for (u32 j = n; j-- > 0;) {
 			u64 p = (u64)a[i] * b[j] + r[i + j + 1] + c;
@@ -419,6 +433,21 @@ inline bui mul_low(const bui& a, const bui& b) {
 	return bul_low(r);
 }
 
+inline bui mul_low_fast(const bui& a, const bui& b) {
+	bui r{};
+	for (u32 i = 0; i < BI_N; ++i) {
+		if (!a[BI_N - 1 - i]) continue;
+		u32 c = 0;
+		for (u32 j = 0; j < BI_N; ++j) {
+			if (i + j >= BI_N) continue;
+			u64 p = (u64)a[BI_N - 1 - i] * b[BI_N - 1 - j] + r[BI_N - 1 - (i + j)] + c;
+			r[BI_N - 1 - (i + j)] = (u32)p;
+			c = p >> 32;
+		}
+	}
+	return r;
+}
+
 inline void mul_mod_ip(bui &a, bui b, const bui &m) {
 	a = mod_native(a, m);
 	b = mod_native(b, m);
@@ -428,7 +457,7 @@ inline void mul_mod_ip(bui &a, bui b, const bui &m) {
 }
 
 inline bui mod_native(bui x, const bui& m) {
-	int shift = highest_bit(x) - highest_bit(m);
+	long long shift = (long long) highest_bit(x) - highest_bit(m);
 	if (shift < 0) return x;
 
 	for (; shift >= 0; --shift) {
@@ -441,7 +470,7 @@ inline bui mod_native(bui x, const bui& m) {
 }
 
 inline bui mod_native(bul x, const bui& m) {
-	int shift = highest_bit(x) - highest_bit(m);
+	long long shift = (long long) highest_bit(x) - highest_bit(m);
 	if (shift < 0) return bul_low(x);
 
 	for (; shift >= 0; --shift) {
@@ -453,10 +482,33 @@ inline bui mod_native(bul x, const bui& m) {
 	return bul_low(x);
 }
 
+inline void mod_native_ip(bui& x, const bui& m) {
+	long long shift = (long long) highest_bit(x) - highest_bit(m);
+	if (shift < 0) return;
+	for (; shift >= 0; --shift) {
+		bui tmp = m;
+		shift_left_ip(tmp, shift);
+		if (cmp(x, tmp) >= 0)
+			sub_ip(x, tmp);
+	}
+}
+
+inline void mod_native_ip(bul& x, const bui& m) {
+	long long shift = (long long) highest_bit(x) - highest_bit(m);
+	if (shift < 0) return;
+
+	for (; shift >= 0; --shift) {
+		bul tmp = bui_to_bul(m);
+		shift_left_ip(tmp, shift);
+		if (cmp(x, tmp) >= 0)
+			sub_ip(x, tmp);
+	}
+}
+
 inline void divmod(const bui& a, const bui& b, bui &q, bui &r) {
 	q = {};
 	r = a;
-	int shift = highest_bit(a) - highest_bit(b);
+	long long shift = (long long) highest_bit(a) - highest_bit(b);
 	if (shift < 0) return;
 	for (; shift >= 0; --shift) {
 		bui tmp = b;
@@ -471,7 +523,7 @@ inline void divmod(const bui& a, const bui& b, bui &q, bui &r) {
 inline void divmod(const bul& a, const bui& b, bui &q, bul &r) {
 	q = {};
 	r = a;
-	int shift = highest_bit(a) - highest_bit(b);
+	long long shift = highest_bit(a) - highest_bit(b);
 	if (shift < 0) return;
 	bul bb = bui_to_bul(b);
 	for (; shift >= 0; --shift) {
@@ -501,6 +553,12 @@ inline bui bui_pow2(u32 bits) {
 	return r;
 }
 
+inline bul bul_pow2(u32 bits) {
+	bul r{};
+	set_bit_ip(r, bits, 1);
+	return r;
+}
+
 bui pow_mod(bui x, const bui& e, const bui &m) {
 	bui r = bui1();
 	u32 hb = highest_bit(e);
@@ -513,13 +571,13 @@ bui pow_mod(bui x, const bui& e, const bui &m) {
 	return r;
 }
 
-// Find highest (MSB) limb power for a bul
+// find highest (MSB) limb
 inline u32 highest_limb(const bul &x) {
 	for (size_t i = 0; i < BI_N * 2; ++i) {
 		if (x[i] > 0)
 			return (BI_N * 2 - 1) - i;
 	}
-	return 0; // all limbs zero
+	return 0;
 }
 
 // Knuth Algorithm D
@@ -749,19 +807,14 @@ std::string bui_to_hex(const bui &a, bool split) {
 // q := a / d (quotient), returns remainder r = a % d.
 // Requires: d != 0
 static inline u32 u32_divmod_bul(const bul &a, u32 d, bul &q) {
-	// a has limbs a.data()[0] .. a.data()[2*BI_N-1], MSW at index 0
-	// We'll produce quotient limbs in q with same layout.
 	u64 rem = 0;
-	const u32 total = BI_N * 2;
-	// initialize quotient to zero
-	for (u32 i = 0; i < total; ++i) q.data()[i] = 0;
+	for (u32 i = 0; i < BI_N * 2; ++i) q[i] = 0;
 
-	for (u32 i = 0; i < total; ++i) {
-		// bring down next limb
-		rem = (rem << 32) | (u64)(a.data()[i]);
+	for (u32 i = 0; i < BI_N * 2; ++i) {
+		rem = (rem << 32) | (u64)a[i]; // bring down next limb
 		// quotient limb fits in 32 bits because rem < d * 2^32 here
 		u32 qi = (u32)(rem / d);
-		q.data()[i] = qi;
+		q[i] = qi;
 		rem = rem - (u64)qi * (u64)d; // rem = rem % d
 	}
 	return (u32)rem;
@@ -1019,9 +1072,59 @@ bui bui_from_hex(const std::string& s) {
 //     return karatsuba_be_top(a, b);
 // }
 
+// Return 2^k - 1, k smaller than BI_BIN
+inline bui bui_binary_flood1(u32 k) {
+	bui r{};
+	u32 l = k / SBU32;
+	u32 b = k % SBU32;
+	if (l) std::fill_n(r.data() + BI_N - l, l, 0xffffffff);
+	if (b) r[BI_N - 1 - l] = (1 << b) - 1;
+	return r;
+}
+
+// Return 2^k - 1, k smaller than 2xBI_BIN
+inline bul bul_binary_flood1(u32 k) {
+	bul r{};
+	u32 l = k / SBU32;
+	u32 b = k % SBU32;
+	if (l) std::fill_n(r.data() + BI_N * 2 - l, l, 0xffffffff);
+	if (b) r[BI_N * 2 - 1 - l] = (1 << b) - 1;
+	return r;
+}
+
 
 // Extended Euclidean algorithm
 bool mod_inverse(bui a, const bui &m, bui &inv_out) {
+	if (bui_is0(m) || bui_is0(a)) return false;
+	if (cmp(a, m) >= 0) a = mod_native(a, m);
+	bui r0 = m, r1 = a;
+	bui t0{}, t1 = bui1();
+	while (!bui_is0(r1)) {
+		// q = r0 / r1, rem = r0 % r1
+		bui q, rem;
+		divmod(r0, r1, q, rem);
+		r0 = r1, r1 = rem;
+		bul prod{};
+		mul_ref(q, t1, prod);  // prod = q * t1
+		bui qtm_rem = mod_native(prod, m); // qtm_rem = (prod) % m
+		if (cmp(t0, qtm_rem) >= 0) {
+			sub_ip(t0, qtm_rem);
+		} else {
+			t0 = m;
+			sub_ip(qtm_rem, t0);
+			sub_ip(t0, qtm_rem);
+		}
+		std::swap(t0, t1);
+	}
+
+	// r0 = gcd(a, m) so if gcd != 1 -> no inverse
+	if (cmp(r0, bui1()) != 0) return false;
+	inv_out = t0;
+	return true;
+}
+
+// Extended Euclidean algorithm
+bool mod_inverse_old(bui a, const bui &m, bui &inv_out) {
 	// invalid modulus or zero
 	if (bui_is0(m)) return false;
 	if (cmp(a, m) >= 0) a = mod_native(a, m);
@@ -1063,12 +1166,43 @@ bool mod_inverse(bui a, const bui &m, bui &inv_out) {
 	return true;
 }
 
+// Extended Euclidean algorithm, a is modded by m
+bool mod_inverse_modded(const bui &a, const bui &m, bui &inv_out) {
+	if (bui_is0(m) || bui_is0(a)) return false;
+	bui r0 = m, r1 = a;
+	bui t0{}, t1 = bui1();
+	while (!bui_is0(r1)) {
+		// q = r0 / r1, rem = r0 % r1
+		bui q, rem;
+		divmod(r0, r1, q, rem);
+		r0 = r1, r1 = rem;
+		bul prod{};
+		mul_ref(q, t1, prod);  // prod = q * t1
+		bui qtm_rem = mod_native(prod, m); // qtm_rem = (prod) % m
+		if (cmp(t0, qtm_rem) >= 0) {
+			sub_ip(t0, qtm_rem);
+		} else {
+			t0 = m;
+			sub_ip(qtm_rem, t0);
+			sub_ip(t0, qtm_rem);
+		}
+		std::swap(t0, t1);
+	}
+
+	// r0 = gcd(a, m) so if gcd != 1 -> no inverse
+	if (cmp(r0, bui1()) != 0) return false;
+	inv_out = t0;
+	return true;
+}
+
+#define REDC_BIT(x)
+
 struct MontgomeryReducer {
 	bui modulus;      // must be odd >= 3
-	bui reducer;      // power of 2
+	bul reducer;      // power of 2
+	bui mask;         // reducer - 1
 	int reducerBits;  // log2(reducer)
 	bui reciprocal;   // reducer^-1 mod modulus
-	bui mask;         // reducer - 1
 	bui factor;       // (reducer * reciprocal - 1) / modulus
 	bui convertedOne; // convertIn(1)
 	static bui modInverse(const bui& a, const bui& m);
@@ -1076,19 +1210,27 @@ struct MontgomeryReducer {
 	MontgomeryReducer(const bui& modulus) : modulus(modulus) {
 		assert(get_bit(modulus, 0) && cmp(modulus, bui1()) == 1);
 		// compute reducer as a power of 2 bigger than modulus
-		reducerBits = (highest_bit(modulus) / 8 + 1) * 8;  // multiple of 8
-		reducer = shift_left(bui1(), reducerBits);
-		mask = sub(reducer, bui1());                         // mask = reducer - 1
-		// assert(gcd(reducer, modulus) == bui1()); m must be a prime thingy
-		// other precomputations
-		mod_inverse(reducer, modulus, reciprocal);         // reducer^-1 mod modulus
-		{
-			auto tmp = mul(reducer, reciprocal);
-			sub_ip(tmp, bul1());
-			bul tmp2;
-			divmod(tmp, modulus, factor, tmp2);
-		}
+		// printf("  mBits RAW: %d\n", highest_bit(modulus));
+		reducerBits = (highest_bit(modulus) / SBU32 + 1) * SBU32;
+		if (reducerBits > 512) reducerBits = 512; // cap at 512
+		printf("reducerBits = %d\n", reducerBits);
+		reducer = bul_pow2(reducerBits);
+		printf("reducer = %s\n", bul_to_dec(reducer).c_str());
+		mask = bui_binary_flood1(reducerBits);
+		printf("mask = %s\n", bui_to_dec(mask).c_str());
 		convertedOne = mod_native(reducer, modulus);
+		printf("c1 = %s\n", bui_to_dec(convertedOne).c_str());
+		{
+			mod_inverse_old(convertedOne, modulus, reciprocal); // reducer^-1 mod modulus
+		}
+		printf("reciprocal: %s\n", bui_to_dec(reciprocal).c_str());
+		{
+			auto tmp = bui_to_bul(reciprocal);
+			shift_left_ip(tmp, reducerBits);
+			sub_ip(tmp, bul1());
+			bul rem;
+			divmod(tmp, modulus, factor, rem);
+		}
 	}
 
 	// convert a standard integer into Montgomery form
@@ -1104,11 +1246,13 @@ struct MontgomeryReducer {
 
 	// Multiply two Montgomery-form numbers
 	bui multiply(const bui& x, const bui& y) const {
+		if (!(cmp(x, modulus) < 0 && cmp(y, modulus) < 0)) {
 		assert(cmp(x, modulus) < 0 && cmp(y, modulus) < 0);
+		}
 		bul product = mul(x, y);
 		bui t_low = bul_low(product);
 		bitwise_and_ip(t_low, mask);
-		t_low = mul_low(t_low, factor);
+		t_low = mul_low_fast(t_low, factor);
 		bitwise_and_ip(t_low, mask);
 		auto tmp2 = mul(t_low, modulus);
 		add_ip(product, tmp2);
@@ -1137,7 +1281,8 @@ struct MontgomeryReducer {
 inline bui mr_pow_mod(bui x, const bui& e, const bui& m) {
 	MontgomeryReducer mr(m);
 	x = mr.convertIn(x);
-	return mr.pow(x, e);
+	bui r = mr.pow(x, e);
+	return mr.convertOut(r);
 }
 
 #endif
