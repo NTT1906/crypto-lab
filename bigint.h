@@ -8,6 +8,7 @@
 #include <cstring>
 #include <future>
 #include <string>
+#include <sstream>
 
 typedef uint32_t u32;
 typedef uint64_t u64;
@@ -1212,18 +1213,18 @@ struct MontgomeryReducer {
 		// compute reducer as a power of 2 bigger than modulus
 		// printf("  mBits RAW: %d\n", highest_bit(modulus));
 		reducerBits = (highest_bit(modulus) / SBU32 + 1) * SBU32;
-		if (reducerBits > 512) reducerBits = 512; // cap at 512
-		printf("reducerBits = %d\n", reducerBits);
+		if (reducerBits > BI_BIT) reducerBits = BI_BIT; // cap at 512
+		// printf("reducerBits = %d\n", reducerBits);
 		reducer = bul_pow2(reducerBits);
-		printf("reducer = %s\n", bul_to_dec(reducer).c_str());
+		// printf("reducer = %s\n", bul_to_dec(reducer).c_str());
 		mask = bui_binary_flood1(reducerBits);
-		printf("mask = %s\n", bui_to_dec(mask).c_str());
+		// printf("mask = %s\n", bui_to_dec(mask).c_str());
 		convertedOne = mod_native(reducer, modulus);
-		printf("c1 = %s\n", bui_to_dec(convertedOne).c_str());
+		// printf("c1 = %s\n", bui_to_dec(convertedOne).c_str());
 		{
 			mod_inverse_old(convertedOne, modulus, reciprocal); // reducer^-1 mod modulus
 		}
-		printf("reciprocal: %s\n", bui_to_dec(reciprocal).c_str());
+		// printf("reciprocal: %s\n", bui_to_dec(reciprocal).c_str());
 		{
 			auto tmp = bui_to_bul(reciprocal);
 			shift_left_ip(tmp, reducerBits);
