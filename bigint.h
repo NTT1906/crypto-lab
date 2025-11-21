@@ -275,7 +275,7 @@ inline bul shift_left_expand(bui x, const u32 k) {
 	u32 bits = k % SBU32;
 	bul r{};
 	// limb-only move (toward MSW)
-	std::copy_backward(x.begin() + (limbs > BI_N) * (limbs - BI_N), x.end(), r.begin() + (BI_N * 2) - limbs);
+	std::copy_backward(x.begin() + (limbs > BI_N) * (limbs - BI_N), x.end(), r.begin() + BI_N * 2 - limbs);
 	// intra-word stitch (only if bits != 0)
 	if (bits) {
 		u32 c = 0, i = BI_N * 2;
