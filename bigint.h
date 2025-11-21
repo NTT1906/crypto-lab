@@ -96,6 +96,8 @@ void mul_mod_ip(bui &a, bui b, const bui &m);
 void mul_ref(const bui &a, const bui &b, bul &r);
 bui bui_pow2(u32 k);
 bul bul_pow2(u32 k);
+bui bui_binary_flood1(u32 k);
+bul bul_binary_flood1(u32 k);
 void dbl_ip(bui &x);
 u32 u32_divmod_bul(const bul &a, u32 d, bul &q);
 
@@ -373,7 +375,7 @@ inline int cmp(const bul& a, const bui& b) {
 	return 0;
 }
 
-void randomize_ip(bui &x) {
+inline void randomize_ip(bui &x) {
 	std::random_device rd; std::mt19937 gen(rd());
 	std::uniform_int_distribution<u32> dist(0, UINT32_MAX);
 	size_t limbs = 1 + gen() % BI_N;
@@ -381,7 +383,7 @@ void randomize_ip(bui &x) {
 	for (size_t i = limbs; i-- > 0;) x[i] = dist(gen);
 }
 
-bui random_odd() {
+inline bui random_odd() {
 	bui x; randomize_ip(x);
 	set_bit_ip(x, 0, 1);
 	return x;
@@ -458,6 +460,17 @@ inline void sub_n(const u32* a, const u32* b, u32* r, u32 n) {
 inline bui sub(bui a, const bui& b) {
 	sub_ip(a, b);
 	return a;
+}
+
+inline void sub_mod_ip(bui& a, const bui& b, const bui& m) {
+	if (cmp(a, b) >= 0) {
+		sub_ip(a, b);
+	} else {
+		bui t = m, bb = b;
+		sub_ip(bb, a); // bb = b - a
+		sub_ip(t, bb); // t  = m - (b - a)
+		a = t;
+	}
 }
 
 ALWAYS_INLINE void mul_imp(const u32* a, const u32* b, u32* r, const u32 n) {
@@ -627,6 +640,26 @@ inline bul bul_pow2(const u32 k) {
 	assert(k < BI_BIT * 2);
 	bul r{};
 	set_bit_ip(r, k, 1);
+	return r;
+}
+
+// Return 2^k - 1, k smaller than BI_BIN
+inline bui bui_binary_flood1(const u32 k) {
+	bui r{};
+	u32 l = k / SBU32;
+	u32 b = k % SBU32;
+	if (l) std::fill_n(r.data() + BI_N - l, l, 0xffffffff);
+	if (b) r[BI_N - 1 - l] = (1 << b) - 1;
+	return r;
+}
+
+// Return 2^k - 1, k smaller than 2xBI_BIN
+inline bul bul_binary_flood1(const u32 k) {
+	bul r{};
+	u32 l = k / SBU32;
+	u32 b = k % SBU32;
+	if (l) std::fill_n(r.data() + BI_N * 2 - l, l, 0xffffffff);
+	if (b) r[BI_N * 2 - 1 - l] = (1 << b) - 1;
 	return r;
 }
 
@@ -830,7 +863,7 @@ inline int hex_val(unsigned char c) {
 	return -1;
 }
 
-std::string bui_to_dec(const bui& x) {
+inline std::string bui_to_dec(const bui& x) {
 	if (bui_is0(x)) return "0";
 	std::vector<u32> parts;
 	bui n = x, q{};
@@ -849,7 +882,7 @@ std::string bui_to_dec(const bui& x) {
 }
 
 // Convert bul to decimal string using base 1e9 chunks.
-std::string bul_to_dec(const bul& x) {
+inline std::string bul_to_dec(const bul& x) {
 	if (bu_is0(x.data(), BI_N * 2)) return "0";
 	std::vector<u32> parts;
 	bul n = x, q{};
@@ -867,7 +900,7 @@ std::string bul_to_dec(const bul& x) {
 	return oss.str();
 }
 
-std::string bui_to_hex(const bui &a, bool split) {
+inline std::string bui_to_hex(const bui &a, bool split) {
 	std::ostringstream o;
 	o << std::hex << std::setfill('0');
 	for (u32 i = 0; i < BI_N; ++i) {
@@ -877,17 +910,17 @@ std::string bui_to_hex(const bui &a, bool split) {
 	return o.str();
 }
 
-std::string normalize_hex_le_to_be(const std::string& s) {
+static std::string normalize_hex_le_to_be(const std::string& s) {
 	std::string hex;
 	for (char c : s) {
 		if (!isspace((unsigned char)c)) hex.push_back(c);
 	}
-	if (hex.empty()) return std::string("0");
+	if (hex.empty()) return "0";
 	reverse(hex.begin(), hex.end());
 	return hex;
 }
 
-bui read_bui_le() {
+inline bui read_bui_le() {
 	std::string line;
 	getline(std::cin, line);
 	std::string be_hex = normalize_hex_le_to_be(line);
@@ -912,9 +945,9 @@ inline u32 u32_divmod_bul(const bul &a, u32 d, bul &q) {
 }
 
 // Big int: return bui from dec string
-bui bui_from_dec(const std::string& s) {
+inline bui bui_from_dec(const std::string& s) {
 	assert(!s.empty() && "bui_from_dec: empty string");
-	size_t i = 0;
+	u32 i = 0;
 	// skip leading spaces and optional '+'
 	while (isspace(s[i])) ++i;
 	if (s[i] == '+') ++i;
@@ -924,8 +957,7 @@ bui bui_from_dec(const std::string& s) {
 	bool any_digit = false;
 	// process each digit in the decimal string
 	bui n10 = bui_from_u32(10u);
-	bui out{};
-	bui tmp{};
+	bui out{}, tmp{};
 	for (; i < s.size(); ++i) {
 		char c = s[i];
 		if (c == '_' || isspace(c)) continue;
@@ -940,9 +972,9 @@ bui bui_from_dec(const std::string& s) {
 }
 
 // Big int: return bui from hex string
-bui bui_from_hex(const std::string& s) {
+inline bui bui_from_hex(const std::string& s) {
 	assert(!s.empty() && "bui_from_hex: empty string");
-	size_t i = 0;
+	u32 i = 0;
 	// skip leading spaces
 	while (i < s.size() && isspace(s[i])) ++i;
 	// optional "0x" or "0X" prefix
@@ -1132,39 +1164,8 @@ bui bui_from_hex(const std::string& s) {
 //     return karatsuba_be_top(a, b);
 // }
 
-// Return 2^k - 1, k smaller than BI_BIN
-inline bui bui_binary_flood1(u32 k) {
-	bui r{};
-	u32 l = k / SBU32;
-	u32 b = k % SBU32;
-	if (l) std::fill_n(r.data() + BI_N - l, l, 0xffffffff);
-	if (b) r[BI_N - 1 - l] = (1 << b) - 1;
-	return r;
-}
-
-// Return 2^k - 1, k smaller than 2xBI_BIN
-inline bul bul_binary_flood1(u32 k) {
-	bul r{};
-	u32 l = k / SBU32;
-	u32 b = k % SBU32;
-	if (l) std::fill_n(r.data() + BI_N * 2 - l, l, 0xffffffff);
-	if (b) r[BI_N * 2 - 1 - l] = (1 << b) - 1;
-	return r;
-}
-
-inline void sub_mod_ip(bui& a, const bui& b, const bui& m) {
-	if (cmp(a, b) >= 0) {
-		sub_ip(a, b);
-	} else {
-		bui t = m, bb = b;
-		sub_ip(bb, a); // bb = b - a
-		sub_ip(t, bb); // t  = m - (b - a)
-		a = t;
-	}
-}
-
 // Extended Euclidean algorithm
-bool mod_inverse_old(bui a, const bui &m, bui &inv_out) {
+inline bool mod_inverse_old(bui a, const bui &m, bui &inv_out) {
 	// invalid modulus or zero
 	if (bui_is0(m)) return false;
 	if (cmp(a, m) >= 0) a = mod_native(a, m);
@@ -1203,7 +1204,7 @@ bool mod_inverse_old(bui a, const bui &m, bui &inv_out) {
 }
 
 // Extended Euclidean algorithm: find a^{-1} mod m
-bool mod_inverse(const bui& a_in, const bui& m, bui& inv_out) {
+inline bool mod_inverse(const bui& a_in, const bui& m, bui& inv_out) {
 	if (bui_is0(m)) return false; // invalid modulus
 	bui a = a_in;
 	if (cmp(a, m) >= 0) a = mod_native(a, m);      // reduce a mod m
