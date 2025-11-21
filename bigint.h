@@ -85,11 +85,14 @@ std::string bui_to_dec(const bui& x);
 std::string bui_to_hex(const bui& a, bool split = false);
 bui bui_from_dec(const std::string& s);
 bui bui_from_hex(const std::string& s);
+bul bui_to_bul(const bui& x);
 
 int cmp(const bui &a, const bui &b);
 void add_ip(bui& a, const bui& b);
 void add_ip(bul& a, const bul& b);
 void sub_ip(bui& a, const bui& b);
+void add_mod_ip(bui& a, const bui& b, const bui& m);
+void sub_mod_ip(bui& a, const bui& b, const bui& m);
 bui mod_native(bui x, const bui& m);
 bui mod_native(bul x, const bui& m);
 void mul_mod_ip(bui &a, bui b, const bui &m);
@@ -247,13 +250,35 @@ inline bui shift_left(bui x, const u32 k) {
 	if (k == 0) return x;
 	u32 limbs = k / SBU32;
 	if (limbs >= BI_N) return {};
-	u32 bits = k % 32;
+	u32 bits = k % SBU32;
 	bui r{};
 	// limb-only move (toward MSW)
 	std::copy(x.begin() + limbs, x.end(), r.begin());
 	// intra-word stitch (only if bits != 0)
 	if (bits) {
 		u32 c = 0, i = BI_N;
+		while (i-- > 0) {
+			u32 tmp = r[i];
+			r[i] = tmp << bits | c;
+			c = tmp >> (32 - bits);
+		}
+	}
+	return r;
+}
+
+// Experiment: shift left expand from bui to bul (r = x * 2^k)
+inline bul shift_left_expand(bui x, const u32 k) {
+	assert(k < BI_N * 2 - 1 && "Cannot shift left by big amount (k > 2xBIN_N - 1)");
+	if (k == 0) return bui_to_bul(x);
+	u32 limbs = k / SBU32;
+	if (limbs >= BI_N * 2) return {};
+	u32 bits = k % SBU32;
+	bul r{};
+	// limb-only move (toward MSW)
+	std::copy_backward(x.begin() + (limbs > BI_N) * (limbs - N), x.end(), r.begin() + (BI_N * 2) - limbs);
+	// intra-word stitch (only if bits != 0)
+	if (bits) {
+		u32 c = 0, i = BI_N * 2;
 		while (i-- > 0) {
 			u32 tmp = r[i];
 			r[i] = tmp << bits | c;
