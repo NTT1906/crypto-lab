@@ -45,26 +45,26 @@ typedef uint64_t u64;
 // a[BI_N - 4] = 0x12345678u;
 struct bui : std::array<u32, BI_N> {
 	using base_type = std::array<u32, BI_N>;
-	constexpr bui() : base_type{} {}
-	static constexpr bui zero() { return bui{}; }
-	static constexpr bui one() {
+	bui() : base_type{} {}
+	static bui zero() { return bui{}; }
+	static bui one() {
 		bui r{}; r[BI_N - 1] = 1;
 		return r;
 	}
-	static constexpr bui from_u32(u32 x) {
+	static bui from_u32(u32 x) {
 		bui r{}; r[BI_N - 1] = x;
 		return r;
 	}
 };
 struct bul : std::array<u32, BI_N * 2> {
 	using base_type = std::array<u32, BI_N * 2>;
-	constexpr bul() : base_type{} {}
-	static constexpr bul zero() { return bul{}; }
-	static constexpr bul one() {
+	bul() : base_type{} {}
+	static bul zero() { return bul{}; }
+	static bul one() {
 		bul r{}; r[BI_N * 2 - 1] = 1;
 		return r;
 	}
-	static constexpr bul from_u32(u32 x) {
+	static bul from_u32(u32 x) {
 		bul r{}; r[BI_N * 2 - 1] = x;
 		return r;
 	}
@@ -83,17 +83,18 @@ void sub_ip(bui& a, const bui& b);
 bui mod_native(bui x, const bui& m);
 bui mod_native(bul x, const bui& m);
 void mul_mod_ip(bui &a, bui b, const bui &m);
+void mul_ref(const bui &a, const bui &b, bul &r);
 bui bui_pow2(u32 k);
 bul bul_pow2(u32 k);
 void dbl_ip(bui &x);
 u32 u32_divmod_bul(const bul &a, u32 d, bul &q);
 
-constexpr bui bui0() { return bui::zero(); }
-constexpr bui bui1() { return bui::one(); }
-constexpr bui bui_from_u32(u32 x) { return bui::from_u32(x); }
+bui bui0() { return bui::zero(); }
+bui bui1() { return bui::one(); }
+bui bui_from_u32(u32 x) { return bui::from_u32(x); }
 
-constexpr bul bul0() { return bul::zero(); }
-constexpr bul bul1() { return bul::one(); }
+bul bul0() { return bul::zero(); }
+bul bul1() { return bul::one(); }
 inline bul bul_from_u32(u32 x) { return bul::from_u32(x); }
 
 inline u32 get_bit(u32 num, u32 pos) { return num >> pos & 1; }
@@ -253,11 +254,14 @@ bui shift_left(bui x, u32 k) {
 	return r;
 }
 
-// shift left mode (r = x * 2^k mod m)
-inline bui shift_left_mod(bui x, u32 shift, const bui& m) {
-	bui p2 = bui_pow2(shift);
-	mul_mod_ip(x, p2, m);
-	return x;
+// shift left mod (r = x * 2^k mod m)
+inline bui shift_left_mod(bui x, const u32 shift, const bui& m) {
+	bul p2 = bul_pow2(shift);
+	bui p2m = mod_native(p2, m);
+	x = mod_native(x, m);
+	mul_ref(x, p2m, p2);
+	p2m = mod_native(p2, m);
+	return p2m;
 }
 
 // shift right in-place (x /= 2^k)
@@ -604,7 +608,7 @@ inline void u32divmod(const bui& a, u32 b, bui& q, u32& r) {
 
 // Big int: return 2^k
 inline bui bui_pow2(const u32 k) {
-	assert(k < BI_BIT);
+	assert(k < BI_BIT && "Input size must be in data range!");
 	bui r{};
 	set_bit_ip(r, k, 1);
 	return r;
@@ -824,7 +828,7 @@ std::string bui_to_dec(const bui& x) {
 	bui n = x, q{};
 	u32 r = 0;
 	while (!bui_is0(n)) {
-		constexpr u32 BASE = 1000000000u;
+		u32 BASE = 1000000000u;
 		u32divmod(n, BASE, q, r);
 		parts.push_back(r);
 		n = q;
@@ -842,7 +846,7 @@ std::string bul_to_dec(const bul& x) {
 	std::vector<u32> parts;
 	bul n = x, q{};
 	while (!bu_is0(n.data(), BI_N * 2)) {
-		constexpr u32 BASE = 1000000000u;
+		u32 BASE = 1000000000u;
 		u32 r = u32_divmod_bul(n, BASE, q);
 		parts.push_back(r);
 		n = q;
@@ -911,7 +915,7 @@ bui bui_from_dec(const std::string& s) {
 	while (s[i] == '0' || s[i] == '_') ++i;
 	bool any_digit = false;
 	// process each digit in the decimal string
-	constexpr bui n10 = bui_from_u32(10u);
+	bui n10 = bui_from_u32(10u);
 	bui out{};
 	bui tmp{};
 	for (; i < s.size(); ++i) {
@@ -939,7 +943,7 @@ bui bui_from_hex(const std::string& s) {
 	bool any_digit = false;
 	bui out{};
 	bui tmp{};
-	constexpr bui n16 = bui_from_u32(16u);
+	bui n16 = bui_from_u32(16u);
 
 	for (; i < s.size(); ++i) {
 		char c = s[i];
@@ -987,11 +991,11 @@ bui bui_from_hex(const std::string& s) {
 // 	return r;
 // }
 //
-// constexpr size_t KARATSUBA_CUTOFF = 2;
-// // constexpr size_t KARATSUBA_CUTOFF = 4;
-// // constexpr size_t KARATSUBA_CUTOFF = 8;
-// // constexpr size_t KARATSUBA_CUTOFF = 16;
-// // constexpr size_t KARATSUBA_CUTOFF = 32; // tune this experimentally
+// size_t KARATSUBA_CUTOFF = 2;
+// // size_t KARATSUBA_CUTOFF = 4;
+// // size_t KARATSUBA_CUTOFF = 8;
+// // size_t KARATSUBA_CUTOFF = 16;
+// // size_t KARATSUBA_CUTOFF = 32; // tune this experimentally
 // inline void karatsuba_be_rec_old(const u32* a, const u32* b, u32* r, const u32 n, u32* scratch) {
 //     if (n <= KARATSUBA_CUTOFF) {
 //         mul_imp(a, b, r, n);
@@ -1105,7 +1109,7 @@ bui bui_from_hex(const std::string& s) {
 // }
 //
 // inline bul karatsuba_be_top(const bui& a, const bui& b) {
-//     constexpr size_t n = BI_N;
+//     size_t n = BI_N;
 // 	// u32 n = std::max(highest_limb(a), highest_limb(b));
 // 	// n = next_pow2(n) * 2;
 //     bul r{};
@@ -1265,13 +1269,12 @@ struct MontgomeryReducer {
 		mask = bui_binary_flood1(reducerBits);
 		convertedOne = mod_native(reducer, modulus);
 		mod_inverse_old(convertedOne, modulus, reciprocal); // reducer^-1 mod modulus
-		{
-			auto tmp = bui_to_bul(reciprocal);
-			shift_left_ip(tmp, reducerBits);
-			sub_ip(tmp, bul1());
-			bul rem;
-			divmod(tmp, modulus, factor, rem);
-		}
+
+		auto tmp = bui_to_bul(reciprocal);
+		shift_left_ip(tmp, reducerBits);
+		sub_ip(tmp, bul1());
+		bul rem;
+		divmod(tmp, modulus, factor, rem);
 		// std::cout << "modulus      = " << bui_to_dec(modulus)      << "\n";
 		// std::cout << "reducer      = " << bul_to_dec(reducer)      << "\n";
 		// std::cout << "mask         = " << bui_to_dec(mask)         << "\n";

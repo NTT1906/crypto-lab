@@ -4,7 +4,7 @@
 #include <cctype>
 #include <cstdio>
 
-#define BI_BIT 1024
+#define BI_BIT 1280
 #include "bigint.h"
 using namespace std;
 
