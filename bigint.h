@@ -18,6 +18,10 @@
 typedef uint32_t u32;
 typedef uint64_t u64;
 
+// #if !defined(DEBUG) && !defined(NDEBUG)
+// #define NDEBUG
+// #endif
+
 #define SU32 sizeof(u32)
 #define SBU32 32
 
@@ -235,6 +239,7 @@ inline void shift_left_ip(bul &x, u32 k) {
 
 // shift left (r = x * 2^k)
 bui shift_left(bui x, u32 k) {
+	assert(k < BI_N - 1 && "Cannot shift left by big amount (k > BIN_N - 1)");
 	if (k == 0) return x;
 	u32 limbs = k / SBU32;
 	if (limbs >= BI_N) return {};
@@ -255,8 +260,9 @@ bui shift_left(bui x, u32 k) {
 }
 
 // shift left mod (r = x * 2^k mod m)
-inline bui shift_left_mod(bui x, const u32 shift, const bui& m) {
-	bul p2 = bul_pow2(shift);
+inline bui shift_left_mod(bui x, const u32 k, const bui& m) {
+	assert(k < BI_N * 2 - 1 && "Cannot shift left by big amount (k > 2xBIN_N - 1)");
+	bul p2 = bul_pow2(k);
 	bui p2m = mod_native(p2, m);
 	x = mod_native(x, m);
 	mul_ref(x, p2m, p2);
