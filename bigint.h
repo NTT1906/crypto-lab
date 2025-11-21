@@ -40,6 +40,12 @@ typedef uint64_t u64;
 #define ALWAYS_INLINE inline
 #endif
 
+#if !defined(_MSC_VER) && defined(__cpp_constexpr)
+#define OP_CONSTEXPR constexpr
+#else
+#define OP_CONSTEXPR
+#endif
+
 // big endian: data[0] = MSW
 // eg: assign 1 to bui: a[BI_N - 1] = 1;
 // eg: assign 0x12345678'9ABCDEF0'11223344'55667788 to bui
@@ -49,26 +55,26 @@ typedef uint64_t u64;
 // a[BI_N - 4] = 0x12345678u;
 struct bui : std::array<u32, BI_N> {
 	using base_type = std::array<u32, BI_N>;
-	bui() : base_type{} {}
-	static bui zero() { return bui{}; }
-	static bui one() {
+	OP_CONSTEXPR bui() : base_type{} {}
+	OP_CONSTEXPR static bui zero() { return {}; }
+	OP_CONSTEXPR static bui one() {
 		bui r{}; r[BI_N - 1] = 1;
 		return r;
 	}
-	static bui from_u32(u32 x) {
+	OP_CONSTEXPR static bui from_u32(const u32 x) {
 		bui r{}; r[BI_N - 1] = x;
 		return r;
 	}
 };
 struct bul : std::array<u32, BI_N * 2> {
 	using base_type = std::array<u32, BI_N * 2>;
-	bul() : base_type{} {}
-	static bul zero() { return bul{}; }
-	static bul one() {
+	OP_CONSTEXPR bul() : base_type{} {}
+	OP_CONSTEXPR static bul zero() { return {}; }
+	OP_CONSTEXPR static bul one() {
 		bul r{}; r[BI_N * 2 - 1] = 1;
 		return r;
 	}
-	static bul from_u32(u32 x) {
+	OP_CONSTEXPR static bul from_u32(const u32 x) {
 		bul r{}; r[BI_N * 2 - 1] = x;
 		return r;
 	}
@@ -93,46 +99,41 @@ bul bul_pow2(u32 k);
 void dbl_ip(bui &x);
 u32 u32_divmod_bul(const bul &a, u32 d, bul &q);
 
-bui bui0() { return bui::zero(); }
-bui bui1() { return bui::one(); }
-bui bui_from_u32(u32 x) { return bui::from_u32(x); }
+ALWAYS_INLINE bui bui0() { return bui::zero(); }
+ALWAYS_INLINE bui bui1() { return bui::one(); }
+ALWAYS_INLINE bui bui_from_u32(const u32 x) { return bui::from_u32(x); }
+ALWAYS_INLINE bul bul0() { return bul::zero(); }
+ALWAYS_INLINE bul bul1() { return bul::one(); }
+ALWAYS_INLINE bul bul_from_u32(const u32 x) { return bul::from_u32(x); }
 
-bul bul0() { return bul::zero(); }
-bul bul1() { return bul::one(); }
-inline bul bul_from_u32(u32 x) { return bul::from_u32(x); }
+inline u32 get_bit(const u32 num, const u32 pos) { return num >> pos & 1; }
 
-inline u32 get_bit(u32 num, u32 pos) { return num >> pos & 1; }
-
-inline u32 set_bit(u32 num, u32 pos, u32 val) {
+inline u32 set_bit(const u32 num, const u32 pos, const u32 val) {
 	if (pos >= 32) return num;
 	u32 mask = (u32)1 << pos;
-	return (num & ~mask) | ((val & 1u) ? mask : 0u);
+	return (num & ~mask) | (val & 1u ? mask : 0u);
 }
 
-inline u32 get_bit(const bui &a, u32 pos) {
+inline u32 get_bit(const bui &a, const u32 pos) {
 	assert(pos < BI_N * SBU32);
 	u32 k = BI_N - 1 - pos / SBU32;
 	return get_bit(a[k], pos % SBU32);
 }
 
 // set in-place
-inline void set_bit_ip(bui &a, u32 pos, u32 val) {
-	if (pos >= BI_N * SBU32) {
-	assert(pos < BI_N * SBU32);
-	}
+inline void set_bit_ip(bui &a, const u32 pos, const u32 val) {
+	assert(pos < BI_N * SBU32 && "Cannot set bit outside the scope of the big integer");
 	u32 k = BI_N - 1 - pos / SBU32;
 	a[k] = set_bit(a[k], pos % 32, val);
 }
 
-inline void set_bit_ip(bul &a, u32 pos, u32 val) {
-	if (pos >= BI_N * 2 * SBU32) {
-		assert(pos < BI_N * 2 * SBU32);
-	}
+inline void set_bit_ip(bul &a, const u32 pos, const u32 val) {
+	assert(pos < BI_N * 2 * SBU32 && "Cannot set bit outside the scope of the big integer");
 	u32 k = BI_N * 2 - 1 - pos / SBU32;
 	a[k] = set_bit(a[k], pos % 32, val);
 }
 
-inline bui set_bit(bui a, u32 pos, u32 val) {
+inline bui set_bit(bui a, const u32 pos, const u32 val) {
 	set_bit_ip(a, pos, val);
 	return a;
 }
@@ -173,6 +174,7 @@ inline void bitwise_and_ip(bui &a, const bui &b) {
 	}
 }
 
+// find highest (MSB) limb
 inline u32 highest_limb(const bui &x) {
 	for (size_t i = 0; i < BI_N; ++i)
 		if (x[i] > 0) return BI_N - i - 1;
@@ -194,7 +196,7 @@ inline u32 highest_limb(const bul &x) {
 //   before: index  0    1    2    3    4
 //           value  a0   a1   a2   a3   a4
 //   after:         a1   a2   a3   a4   0   // multiplied by 2^(32*l)
-inline void shift_limb_left(bul &x, u32 l) {
+inline void shift_limb_left(bul &x, const u32 l) {
 	if (l == 0) return;
 	if (l >= BI_N * 2) {
 		std::fill(x.begin(), x.end(), 0);
@@ -205,7 +207,7 @@ inline void shift_limb_left(bul &x, u32 l) {
 }
 
 // shift left in-place (x *= 2^k)
-ALWAYS_INLINE void shift_left_ip_imp(u32 *x, u32 n, u32 k) {
+ALWAYS_INLINE void shift_left_ip_imp(u32 *x, const u32 n, const u32 k) {
 	if (k == 0) return;
 	const u32 limbs = k / SBU32;
 	if (limbs >= n) {
@@ -229,16 +231,16 @@ ALWAYS_INLINE void shift_left_ip_imp(u32 *x, u32 n, u32 k) {
 	}
 }
 
-inline void shift_left_ip(bui &x, u32 k) {
+inline void shift_left_ip(bui &x, const u32 k) {
 	shift_left_ip_imp(x.data(), BI_N, k);
 }
 
-inline void shift_left_ip(bul &x, u32 k) {
+inline void shift_left_ip(bul &x, const u32 k) {
 	shift_left_ip_imp(x.data(), BI_N * 2, k);
 }
 
 // shift left (r = x * 2^k)
-bui shift_left(bui x, u32 k) {
+inline bui shift_left(bui x, const u32 k) {
 	assert(k < BI_N - 1 && "Cannot shift left by big amount (k > BIN_N - 1)");
 	if (k == 0) return x;
 	u32 limbs = k / SBU32;
@@ -271,7 +273,7 @@ inline bui shift_left_mod(bui x, const u32 k, const bui& m) {
 }
 
 // shift right in-place (x /= 2^k)
-ALWAYS_INLINE void shift_right_ip_imp(u32 *x, const u32 n, u32 k) {
+ALWAYS_INLINE void shift_right_ip_imp(u32 *x, const u32 n, const u32 k) {
 	if (k == 0) return;
 	const u32 limbs = k / SBU32;
 	if (limbs >= n) {
@@ -302,7 +304,7 @@ inline void shift_right_ip(bui& x, const u32 k) {
 }
 
 // Big long: shift right in-place (x /= 2^k)
-inline void shift_right_ip(bul& x, u32 k) {
+inline void shift_right_ip(bul& x, const u32 k) {
 	shift_right_ip_imp(x.data(), BI_N * 2, k);
 }
 
@@ -371,7 +373,7 @@ inline int cmp(const bul& a, const bui& b) {
 	return 0;
 }
 
-static void randomize_ip(bui &x) {
+void randomize_ip(bui &x) {
 	std::random_device rd; std::mt19937 gen(rd());
 	std::uniform_int_distribution<u32> dist(0, UINT32_MAX);
 	size_t limbs = 1 + gen() % BI_N;
@@ -379,7 +381,7 @@ static void randomize_ip(bui &x) {
 	for (size_t i = limbs; i-- > 0;) x[i] = dist(gen);
 }
 
-static bui random_odd() {
+bui random_odd() {
 	bui x; randomize_ip(x);
 	set_bit_ip(x, 0, 1);
 	return x;
@@ -395,7 +397,7 @@ ALWAYS_INLINE u32 add_ip_n_imp(u32* a, const u32* b, u32 n) {
 	return c;
 }
 
-inline void add_ip_n(u32* a, const u32* b, u32 n) {
+inline void add_ip_n(u32* a, const u32* b, const u32 n) {
 	add_ip_n_imp(a, b, n);
 }
 
@@ -1061,9 +1063,9 @@ bui bui_from_hex(const std::string& s) {
 // 	u32* z0 = scratch;                 // size 2*other
 // 	u32* z1 = z0 + 2 * other;          // size 2*other
 // 	u32* z2 = z1 + 2 * other;          // size 2*half
-// 	u32* tmpa = z2 + 2 * half;
-// 	u32* tmpb = tmpa + other;
-// 	u32* subscratch = tmpb + other;
+// 	u32* tmp_a = z2 + 2 * half;
+// 	u32* tmp_b = tmp_a + other;
+// 	u32* subscratch = tmp_b + other;
 //
 // 	// z0 = a0 * b0
 // 	karatsuba_be_rec(a0, b0, z0, other, subscratch);
@@ -1071,18 +1073,18 @@ bui bui_from_hex(const std::string& s) {
 // 	// z2 = a1 * b1
 // 	karatsuba_be_rec(a1, b1, z2, half, subscratch);
 //
-// 	// tmpa = a0 + a1 (aligned to low indices)
-// 	std::fill_n(tmpa, other, 0);
-// 	std::fill_n(tmpb, other, 0);
-// 	std::copy(a0 + (other - half), a0 + other, tmpa + (other - half));
+// 	// tmp_a = a0 + a1 (aligned to low indices)
+// 	std::fill_n(tmp_a, other, 0);
+// 	std::fill_n(tmp_b, other, 0);
+// 	std::copy(a0 + (other - half), a0 + other, tmp_a + (other - half));
 // 	for (u32 i = 0; i < half; ++i)
-// 		tmpa[i] += a1[i];
-// 	std::copy(b0 + (other - half), b0 + other, tmpb + (other - half));
+// 		tmp_a[i] += a1[i];
+// 	std::copy(b0 + (other - half), b0 + other, tmp_b + (other - half));
 // 	for (u32 i = 0; i < half; ++i)
-// 		tmpb[i] += b1[i];
+// 		tmp_b[i] += b1[i];
 //
 // 	// z1 = (a0+a1)*(b0+b1)
-// 	karatsuba_be_rec(tmpa, tmpb, z1, other, subscratch);
+// 	karatsuba_be_rec(tmp_a, tmp_b, z1, other, subscratch);
 //
 // 	// z1 = z1 - z2 - z0
 // 	sub_n(z1 + (2 * other - 2 * half), z2, z1 + (2 * other - 2 * half), 2 * half);
@@ -1150,12 +1152,11 @@ inline bul bul_binary_flood1(u32 k) {
 	return r;
 }
 
-static inline void sub_mod_ip(bui& a, const bui& b, const bui& m) {
+inline void sub_mod_ip(bui& a, const bui& b, const bui& m) {
 	if (cmp(a, b) >= 0) {
 		sub_ip(a, b);
 	} else {
-		bui t = m;
-		bui bb = b;
+		bui t = m, bb = b;
 		sub_ip(bb, a); // bb = b - a
 		sub_ip(t, bb); // t  = m - (b - a)
 		a = t;
@@ -1168,11 +1169,7 @@ bool mod_inverse_old(bui a, const bui &m, bui &inv_out) {
 	if (bui_is0(m)) return false;
 	if (cmp(a, m) >= 0) a = mod_native(a, m);
 	if (bui_is0(a)) return false; // zero has no inverse
-
-	bui r0 = m, r1 = a;
-	bui t0{};
-	bui t1 = bui1();
-
+	bui r0 = m, r1 = a, t0{}, t1 = bui1();
 	while (!bui_is0(r1)) {
 		// q = r0 / r1, rem = r0 % r1
 		bui q, rem;
