@@ -81,27 +81,26 @@ class MontgomeryReducer:
         mod: int = self.modulus
         assert (0 <= x < mod) and (0 <= y < mod)
         product: int = x * y
-        # print(f"x      = {x}")
-        # print(f"y      = {y}")
-        # print(f"1: p   = {product}")
+        print(f"x      = {x}")
+        print(f"y      = {y}")
+        print(f"1: p   = {product}")
 
         temp: int = ((product & self.mask) * self.factor) & self.mask
-        # t1: int = product & self.mask
-        # print(f"2.1: t1= {t1}")
-        # t2: int = t1 * self.factor
-        # print(f"2.2: t2= {t2}")
-        # temp: int = t2 & self.mask
-        # print(f"2: temp= {temp}")
+        t1: int = product & self.mask
+        print(f"2.1: t1= {t1}")
+        t2: int = t1 * self.factor
+        print(f"2.2: t2= {t2}")
+        temp: int = t2 & self.mask
+        print(f"2: temp= {temp}")
 
         reduced: int = (product + temp * mod) >> self.reducerbits
-        # print(f"3.1: r1= {temp * mod}")
-        # print(f"3.2: r2= {product + temp * mod}")
-        # print(f"3: redu= {reduced}")
+        print(f"3.1: r1= {temp * mod}")
+        print(f"3.2: r2= {product + temp * mod}")
+        print(f"3: redu= {reduced}")
         result: int = reduced if (reduced < mod) else (reduced - mod)
-        # print(f"4: resu= {result}")
+        print(f"4: resu= {result}")
         assert 0 <= result < mod
         return result
-
 
     # Input x (base) and output (power) are in Montgomery form and in the range [0, modulus); input y (exponent) is in standard form
     def pow(self, x: int, y: int) -> int:
@@ -126,27 +125,25 @@ if __name__ == "__main__":
     # u = 260428835329122752520818469321216072583938198616075453742527759001901820374664228839496959095353854544158481165265966459
     # v = 1312312317639123213
     mr = MontgomeryReducer(m)
-    print(f"{mr.convert_out(612493671344053011157091795132248841136989766388459368195194408984173087601768678925415826080949598019045450626515608314258100355257452202564819177260395)}")
-    # print(f"{mr.convert_out(6650421944427725974627109484903380353681150873466874600242011921262076349834032519620466063368400229317193199169205366507480105265772884722847646501480855)}")
-    a = 7374751275076307554765876620240144245988490129630033745620514934644211185825655100566592812806041641553528829045167447939485851447403143191634819604786290
-    b = 7931797063256602633439553164635162684506884188328717568638901429662160098809460010762138538485928369616604901529703437239213088020739322392051575745840140
-    print(mr.multiply(a, b))
-    print(mr.convert_out(mr.multiply(a, b)))
-    # mr = MontgomeryReducer(8274904334290417405341624571932224150456224549917673444239237760272785701939526927698156030175801211624849856326839256526253153336777911614668501375751381)
-    # mr = MontgomeryReducer(6274904334290417405341624571932224150456224549917673444239237760272785701939526927698156030175801211624849856326839256526253153336777911614668501375751381)
-    # u = 260428835329122752520818469321216072583938198616075453742527
-    # v = 1312312317639123213
-    # mr = MontgomeryReducer(108579795932485217312615519053)
     print(f"reducerBits= {mr.reducerbits}")
     print(f"reciprocal = {mr.reciprocal}")
     print(f"mask       = {mr.mask}")
     print(f"reducer    = {mr.reducer}")
     print(f"factor     = {mr.factor}")
     print(f"c1         = {mr.convertedone}")
+    # print(f"{mr.convert_out(612493671344053011157091795132248841136989766388459368195194408984173087601768678925415826080949598019045450626515608314258100355257452202564819177260396)}")
+    a = 7374751275076307554765876620240144245988490129630033745620514934644211185825655100566592812806041641553528829045167447939485851447403143191634819604786290
+    b = 7931797063256602633439553164635162684506884188328717568638901429662160098809460010762138538485928369616604901529703437239213088020739322392051575745840140
+    print(f"a     : {a}")
+    print(f"b     : {b}")
+    print(f"ori a : {mr.convert_out(a)}")
+    print(f"ori b : {mr.convert_out(b)}")
+    print(f"ab in : {mr.multiply(a, b)}")
+    print(f"ab out: {mr.convert_out(mr.multiply(a, b))}")
 
-    cu = mr.convert_in(u)
-    # print(f"cu={cu}")
-    r = mr.pow(cu, v)
-    cr = mr.convert_out(r)
-    print(f"r ={r}\ncr={cr}")
+    # cu = mr.convert_in(u)
+    # # print(f"cu={cu}")
+    # r = mr.pow(cu, v)
+    # cr = mr.convert_out(r)
+    # print(f"r ={r}\ncr={cr}")
     # unittest.main()
