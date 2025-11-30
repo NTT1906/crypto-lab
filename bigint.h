@@ -127,9 +127,7 @@ inline u32 get_bit(const bui &a, const u32 pos) {
 
 // set in-place
 inline void set_bit_ip(bui &a, const u32 pos, const u32 val) {
-	if (pos >= BI_N * SBU32) {
-		assert(pos < BI_N * SBU32 && "Cannot set bit outside the scope of the big integer");
-	}
+	assert(pos < BI_N * SBU32 && "Cannot set bit outside the scope of the big integer");
 	u32 k = BI_N - 1 - pos / SBU32;
 	a[k] = set_bit(a[k], pos % 32, val);
 }
@@ -292,9 +290,7 @@ inline bul shift_left_expand(bui x, const u32 k) {
 
 // shift left mod (r = x * 2^k mod m)
 inline bui shift_left_mod(bui x, const u32 k, const bui& m) {
-	if (k >= BI_N * 2) {
-		assert(k < BI_N * 2 && "Cannot shift left by big amount (k > 2xBIN_N - 1)");
-	}
+	assert(k < BI_N * 2 && "Cannot shift left by big amount (k > 2xBIN_N - 1)");
 	bul p2 = bul_pow2(k);
 	bui p2m = mod_native(p2, m);
 	x = mod_native(x, m);
@@ -1332,36 +1328,20 @@ struct MontgomeryReducer {
 	bui multiply(const bui& x, const bui& y) const {
 		assert(cmp(x, modulus) < 0 && cmp(y, modulus) < 0);
 		bul product = mul(x, y);
-		// printf("x      = %s\n", bui_to_dec(x).c_str());
-		// printf("y      = %s\n", bui_to_dec(y).c_str());
-		// printf("1: p   = %s\n", bul_to_dec(product).c_str());
 		bui t_low = bul_low(product);
 		bitwise_and_ip(t_low, mask);
-        // printf("2.1: t1= %s\n", bui_to_dec(t_low).c_str());
 		t_low = mul_low_fast(t_low, factor);
-        // printf("2.2: t2= %s\n", bui_to_dec(t_low).c_str());
-		bul tt_low_tmp = mul(t_low, factor);
-		// printf("2.2:_t2= %s\n", bul_to_dec(tt_low_tmp).c_str());
 		bitwise_and_ip(t_low, mask);
-        // printf("2: temp= %s\n", bui_to_dec(t_low).c_str());
 		auto tmp2 = mul(t_low, modulus);
-		// printf("3.1: r1= %s\n", bul_to_dec(tmp2).c_str());
 		u32 c = add_ip_n_imp(product.data(), tmp2.data(), BI_N * 2);
-		// if (c) {
-			// printf("OVERFLOW\n"); // overflow at pos 2xBI_N
-		// }
-        // printf("3.2: r2= %s\n", bul_to_dec(product).c_str());
 		shift_right_ip(product, reducerBits);
-        // printf("3: redu= %s\n", bul_to_dec(product).c_str());
 		if (c) {
 			bul carry = bul_pow2(BI_BIT * 2 - reducerBits);
 			add_ip(product, carry);
 		}
-		// if (c) add_ip(product, bul1());
 		if (cmp(product, modulus) >= 0) {
 			sub_ip(product, bui_to_bul(modulus));
 		}
-        // printf("4: resu= %s\n", bul_to_dec(product).c_str());
 		return bul_low(product);
 	}
 
